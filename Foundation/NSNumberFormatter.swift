@@ -24,24 +24,22 @@ internal let kCFNumberFormatterCurrencyAccountingStyle = CFNumberFormatterStyle.
 
 public class NSNumberFormatter : NSFormatter {
     
-    typealias CFType = CFNumberFormatterRef
+    typealias CFType = CFNumberFormatter
     private var _currentCfFormatter: CFType?
     private var _cfFormatter: CFType {
-        get {
-            if let obj = _currentCfFormatter {
-                return obj
-            } else {
-                #if os(OSX) || os(iOS)
-                    let numberStyle = CFNumberFormatterStyle(rawValue: CFIndex(self.numberStyle.rawValue))!
-                #else
-                    let numberStyle = CFNumberFormatterStyle(self.numberStyle.rawValue)
-                #endif
-                
-                let obj = CFNumberFormatterCreate(kCFAllocatorSystemDefault, locale._cfObject, numberStyle)
-                _setFormatterAttributes(obj)
-                _currentCfFormatter = obj
-                return obj
-            }
+        if let obj = _currentCfFormatter {
+            return obj
+        } else {
+            #if os(OSX) || os(iOS)
+                let numberStyle = CFNumberFormatterStyle(rawValue: CFIndex(self.numberStyle.rawValue))!
+            #else
+                let numberStyle = CFNumberFormatterStyle(self.numberStyle.rawValue)
+            #endif
+            
+            let obj = CFNumberFormatterCreate(kCFAllocatorSystemDefault, locale._cfObject, numberStyle)
+            _setFormatterAttributes(obj)
+            _currentCfFormatter = obj
+            return obj
         }
     }
     
@@ -85,7 +83,7 @@ public class NSNumberFormatter : NSFormatter {
         _currentCfFormatter = nil
     }
     
-    internal func _setFormatterAttributes(formatter: CFNumberFormatterRef) {
+    internal func _setFormatterAttributes(formatter: CFNumberFormatter) {
         _setFormatterAttribute(formatter, attributeName: kCFNumberFormatterCurrencyCode, value: _currencyCode?._cfObject)
         _setFormatterAttribute(formatter, attributeName: kCFNumberFormatterDecimalSeparator, value: _decimalSeparator?._cfObject)
         _setFormatterAttribute(formatter, attributeName: kCFNumberFormatterCurrencyDecimalSeparator, value: _currencyDecimalSeparator?._cfObject)
@@ -129,7 +127,7 @@ public class NSNumberFormatter : NSFormatter {
         }
     }
     
-    internal func _setFormatterAttribute(formatter: CFNumberFormatterRef, attributeName: CFString, value: AnyObject?) {
+    internal func _setFormatterAttribute(formatter: CFNumberFormatter, attributeName: CFString, value: AnyObject?) {
         if let value = value {
             CFNumberFormatterSetProperty(formatter, attributeName, value)
         }

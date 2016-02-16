@@ -29,7 +29,7 @@ private func _standardizedPath(path: String) -> String {
 }
 
 public class NSURL : NSObject, NSSecureCoding, NSCopying {
-    typealias CFType = CFURLRef
+    typealias CFType = CFURL
     internal var _base = _CFInfo(typeID: CFURLGetTypeID())
     internal var _flags : UInt32 = 0
     internal var _encoding : CFStringEncoding = 0
@@ -49,19 +49,15 @@ public class NSURL : NSObject, NSSecureCoding, NSCopying {
     
     
     internal var _cfObject : CFType {
-        get {
-            if self.dynamicType === NSURL.self {
-                return unsafeBitCast(self, CFType.self)
-            } else {
-                return CFURLCreateWithString(kCFAllocatorSystemDefault, relativeString._cfObject, self.baseURL?._cfObject)
-            }
+        if self.dynamicType === NSURL.self {
+            return unsafeBitCast(self, CFType.self)
+        } else {
+            return CFURLCreateWithString(kCFAllocatorSystemDefault, relativeString._cfObject, self.baseURL?._cfObject)
         }
     }
     
     public override var hash: Int {
-        get {
-            return Int(bitPattern: CFHash(_cfObject))
-        }
+        return Int(bitPattern: CFHash(_cfObject))
     }
     
     public override func isEqual(object: AnyObject?) -> Bool {
@@ -73,9 +69,7 @@ public class NSURL : NSObject, NSSecureCoding, NSCopying {
     }
     
     public override var description: String {
-        get {
-            return CFCopyDescription(_cfObject)._swiftObject
-        }
+        return CFCopyDescription(_cfObject)._swiftObject
     }
 
     deinit {
@@ -94,12 +88,28 @@ public class NSURL : NSObject, NSSecureCoding, NSCopying {
         return true
     }
     
-    public required init?(coder aDecoder: NSCoder) {
-        NSUnimplemented()
+    public convenience required init?(coder aDecoder: NSCoder) {
+        if aDecoder.allowsKeyedCoding {
+            let base = aDecoder.decodeObjectOfClass(NSURL.self, forKey:"NS.base")
+            let relative = aDecoder.decodeObjectOfClass(NSString.self, forKey:"NS.relative")
+
+            if relative == nil {
+                return nil
+            }
+            
+            self.init(string: relative!.bridge(), relativeToURL: base)
+        } else {
+            NSUnimplemented()
+        }
     }
     
     public func encodeWithCoder(aCoder: NSCoder) {
-        NSUnimplemented()
+	if aCoder.allowsKeyedCoding {
+            aCoder.encodeObject(self.baseURL, forKey:"NS.base")
+            aCoder.encodeObject(self.relativeString.bridge(), forKey:"NS.relative")
+	} else {
+            NSUnimplemented()
+        }
     }
     
     internal init(fileURLWithPath path: String, isDirectory isDir: Bool, relativeToURL baseURL: NSURL?) {
@@ -435,7 +445,7 @@ extension NSString {
     
     // Returns a new string made from the receiver by replacing all percent encoded sequences with the matching UTF-8 characters.
     public var stringByRemovingPercentEncoding: String? {
-        return _CFStringCreateByRemovingPercentEncoding(kCFAllocatorSystemDefault, self._cfObject)._swiftObject
+        return _CFStringCreateByRemovingPercentEncoding(kCFAllocatorSystemDefault, self._cfObject)?._swiftObject
     }
 }
 
@@ -884,7 +894,7 @@ public class NSURLComponents : NSObject, NSCopying {
 
 extension NSURL : _CFBridgable { }
 
-extension CFURLRef : _NSBridgable {
+extension CFURL : _NSBridgable {
     typealias NSType = NSURL
     internal var _nsObject: NSType { return unsafeBitCast(self, NSType.self) }
 }

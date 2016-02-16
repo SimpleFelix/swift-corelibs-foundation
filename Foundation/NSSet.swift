@@ -75,12 +75,10 @@ public class NSSet : NSObject, NSCopying, NSMutableCopying, NSSecureCoding, NSCo
     internal var _storage: Set<NSObject>
     
     public var count: Int {
-        get {
-            if self.dynamicType === NSSet.self || self.dynamicType === NSMutableSet.self {
-                return _storage.count
-            } else {
-                NSRequiresConcreteImplementation()
-            }
+        if self.dynamicType === NSSet.self || self.dynamicType === NSMutableSet.self {
+            return _storage.count
+        } else {
+            NSRequiresConcreteImplementation()
         }
     }
     
@@ -117,11 +115,38 @@ public class NSSet : NSObject, NSCopying, NSMutableCopying, NSSecureCoding, NSCo
     }
     
     public required convenience init?(coder aDecoder: NSCoder) {
-        NSUnimplemented()
+        if !aDecoder.allowsKeyedCoding {
+            var cnt: UInt32 = 0
+            // We're stuck with (int) here (rather than unsigned int)
+            // because that's the way the code was originally written, unless
+            // we go to a new version of the class, which has its own problems.
+            withUnsafeMutablePointer(&cnt) { (ptr: UnsafeMutablePointer<UInt32>) -> Void in
+                aDecoder.decodeValueOfObjCType("i", at: UnsafeMutablePointer<Void>(ptr))
+            }
+            let objects = UnsafeMutablePointer<AnyObject?>.alloc(Int(cnt))
+            for idx in 0..<cnt {
+                objects.advancedBy(Int(idx)).initialize(aDecoder.decodeObject())
+            }
+            self.init(objects: UnsafePointer<AnyObject?>(objects), count: Int(cnt))
+            objects.destroy(Int(cnt))
+            objects.dealloc(Int(cnt))
+        } else if aDecoder.dynamicType == NSKeyedUnarchiver.self || aDecoder.containsValueForKey("NS.objects") {
+            let objects = aDecoder._decodeArrayOfObjectsForKey("NS.objects")
+            self.init(array: objects)
+        } else {
+            var objects = [AnyObject]()
+            var count = 0
+            while let object = aDecoder.decodeObjectForKey("NS.object.\(count)") {
+                objects.append(object)
+                count += 1
+            }
+            self.init(array: objects)
+        }
     }
     
     public func encodeWithCoder(aCoder: NSCoder) {
-        NSUnimplemented()
+        // The encoding of a NSSet is identical to the encoding of an NSArray of its contents
+        self.allObjects._nsObject.encodeWithCoder(aCoder)
     }
     
     public override func copy() -> AnyObject {
@@ -210,11 +235,9 @@ extension NSSet {
 extension NSSet {
     
     public var allObjects: [AnyObject] {
-        get {
-            // Would be nice to use `Array(self)` here but compiler
-            // crashes on Linux @ swift 6e3e83c
-            return map { $0 }
-        }
+        // Would be nice to use `Array(self)` here but compiler
+        // crashes on Linux @ swift 6e3e83c
+        return map { $0 }
     }
     
     public func anyObject() -> AnyObject? {
@@ -305,7 +328,7 @@ extension NSSet {
 }
 
 extension NSSet : _CFBridgable, _SwiftBridgable {
-    internal var _cfObject: CFSetRef { return unsafeBitCast(self, CFSetRef.self) }
+    internal var _cfObject: CFSet { return unsafeBitCast(self, CFSet.self) }
     internal var _swiftObject: Set<NSObject> {
         var set: Set<NSObject>?
         Set._forceBridgeFromObject(self, result: &set)
@@ -313,14 +336,14 @@ extension NSSet : _CFBridgable, _SwiftBridgable {
     }
 }
 
-extension CFSetRef : _NSBridgable, _SwiftBridgable {
+extension CFSet : _NSBridgable, _SwiftBridgable {
     internal var _nsObject: NSSet { return unsafeBitCast(self, NSSet.self) }
     internal var _swiftObject: Set<NSObject> { return _nsObject._swiftObject }
 }
 
 extension Set : _NSBridgable, _CFBridgable {
     internal var _nsObject: NSSet { return _bridgeToObject() }
-    internal var _cfObject: CFSetRef { return _nsObject._cfObject }
+    internal var _cfObject: CFSet { return _nsObject._cfObject }
 }
 
 extension NSSet : SequenceType {

@@ -62,9 +62,11 @@ class TestNSString : XCTestCase {
             ("test_longLongValue", test_longLongValue ),
             ("test_rangeOfCharacterFromSet", test_rangeOfCharacterFromSet ),
             ("test_CFStringCreateMutableCopy", test_CFStringCreateMutableCopy),
+            ("test_FromContentsOfURL",test_FromContentsOfURL),
             ("test_FromContentOfFile",test_FromContentOfFile),
             ("test_swiftStringUTF16", test_swiftStringUTF16),
-            ("test_completePathIntoString", test_completePathIntoString),
+            // This test takes forever on build servers; it has been seen up to 1852.084 seconds
+//            ("test_completePathIntoString", test_completePathIntoString),
             ("test_stringByTrimmingCharactersInSet", test_stringByTrimmingCharactersInSet),
             ("test_initializeWithFormat", test_initializeWithFormat),
             ("test_initializeWithFormat2", test_initializeWithFormat2),
@@ -75,8 +77,11 @@ class TestNSString : XCTestCase {
             ("test_stringByResolvingSymlinksInPath", test_stringByResolvingSymlinksInPath),
             ("test_stringByExpandingTildeInPath", test_stringByExpandingTildeInPath),
             ("test_stringByStandardizingPath", test_stringByStandardizingPath),
+            ("test_stringByRemovingPercentEncoding", test_stringByRemovingPercentEncoding),
             ("test_ExternalRepresentation", test_ExternalRepresentation),
-            ("test_mutableStringConstructor", test_mutableStringConstructor)
+            ("test_mutableStringConstructor", test_mutableStringConstructor),
+            ("test_PrefixSuffix", test_PrefixSuffix),
+            ("test_reflection", test_reflection),
         ]
     }
 
@@ -259,7 +264,27 @@ class TestNSString : XCTestCase {
         let string = NSString(CString: bytes.map { Int8(bitPattern: $0) }, encoding: NSUTF8StringEncoding)
         XCTAssertNil(string)
     }
-    
+
+    func test_FromContentsOfURL() {
+        guard let testFileURL = testBundle().URLForResource("NSStringTestData", withExtension: "txt") else {
+            XCTFail("URL for NSStringTestData.txt is nil")
+            return
+        }
+
+        do {
+            let string = try NSString(contentsOfURL: testFileURL, encoding: NSUTF8StringEncoding)
+            XCTAssertEqual(string, "swift-corelibs-foundation")
+        } catch {
+            XCTFail("Unable to init NSString from contentsOfURL:encoding:")
+        }
+        do {
+            let string = try NSString(contentsOfURL: testFileURL, encoding: NSUTF16StringEncoding)
+            XCTAssertNotEqual(string, "swift-corelibs-foundation", "Wrong result when reading UTF-8 file with UTF-16 encoding in contentsOfURL:encoding")
+        } catch {
+            XCTFail("Unable to init NSString from contentsOfURL:encoding:")
+        }
+    }
+
     func test_FromContentOfFile() {
         let testFilePath = testBundle().pathForResource("NSStringTestData", ofType: "txt")
         XCTAssertNotNil(testFilePath)
@@ -350,7 +375,7 @@ class TestNSString : XCTestCase {
     
     func test_CFStringCreateMutableCopy() {
         let nsstring: NSString = "абВГ"
-        let mCopy = CFStringCreateMutableCopy(kCFAllocatorSystemDefault, 0, unsafeBitCast(nsstring, CFStringRef.self))
+        let mCopy = CFStringCreateMutableCopy(kCFAllocatorSystemDefault, 0, unsafeBitCast(nsstring, CFString.self))
         let str = unsafeBitCast(mCopy, NSString.self).bridge()
         XCTAssertEqual(nsstring.bridge(), str)
     }
@@ -363,7 +388,7 @@ class TestNSString : XCTestCase {
 
         let testString = "hello world"
         let string = NSString(string: testString)
-        let cfString = unsafeBitCast(string, CFStringRef.self)
+        let cfString = unsafeBitCast(string, CFString.self)
         
         // Get the bytes as UTF16
         let reservedLength = 50
@@ -800,6 +825,13 @@ class TestNSString : XCTestCase {
             XCTAssertEqual(result, path.bridge(), "parent links could not be resolved for relative paths")
         }
     }
+
+    func test_stringByRemovingPercentEncoding() {
+        let s1 = "a%20b".stringByRemovingPercentEncoding
+        XCTAssertEqual(s1, "a b")
+        let s2 = "a%1 b".stringByRemovingPercentEncoding
+        XCTAssertNil(s2, "returns nil for a string with an invalid percent encoding")
+    }
     
     func test_ExternalRepresentation() {
         // Ensure NSString can be used to create an external data representation
@@ -809,7 +841,7 @@ class TestNSString : XCTestCase {
         let ISOLatin1Encoding = CFStringEncoding(kCFStringEncodingISOLatin1)
         
         do {
-            let string = unsafeBitCast(NSString(string: "this is an external string that should be representable by data"), CFStringRef.self)
+            let string = unsafeBitCast(NSString(string: "this is an external string that should be representable by data"), CFString.self)
             let UTF8Data = CFStringCreateExternalRepresentation(kCFAllocatorDefault, string, UTF8Encoding, 0)
             let UTF8Length = CFDataGetLength(UTF8Data)
             XCTAssertEqual(UTF8Length, 63, "NSString should successfully produce an external UTF8 representation with a length of 63 but got \(UTF8Length) bytes")
@@ -824,7 +856,7 @@ class TestNSString : XCTestCase {
         }
         
         do {
-            let string = unsafeBitCast(NSString(string: "🐢 encoding all the way down. 🐢🐢🐢"), CFStringRef.self)
+            let string = unsafeBitCast(NSString(string: "🐢 encoding all the way down. 🐢🐢🐢"), CFString.self)
             let UTF8Data = CFStringCreateExternalRepresentation(kCFAllocatorDefault, string, UTF8Encoding, 0)
             let UTF8Length = CFDataGetLength(UTF8Data)
             XCTAssertEqual(UTF8Length, 44, "NSString should successfully produce an external UTF8 representation with a length of 44 but got \(UTF8Length) bytes")
@@ -841,5 +873,211 @@ class TestNSString : XCTestCase {
     func test_mutableStringConstructor() {
         let mutableString = NSMutableString(string: "Test")
         XCTAssertEqual(mutableString, "Test")
+    }
+}
+
+struct ComparisonTest {
+    let lhs: String
+    let rhs: String
+    let loc: UInt
+    let reason: String
+
+    var xfail: Bool {
+      return !reason.isEmpty
+    }
+
+    init(
+        _ lhs: String, _ rhs: String,
+          reason: String = "", line: UInt = #line
+    ) {
+        self.lhs = lhs
+        self.rhs = rhs
+        self.reason = reason
+        self.loc = line
+    }
+}
+
+let comparisonTests = [
+    ComparisonTest("", ""),
+    ComparisonTest("", "a"),
+
+    // ASCII cases
+    ComparisonTest("t", "tt"),
+    ComparisonTest("t", "Tt"),
+    ComparisonTest("\u{0}", ""),
+    ComparisonTest("\u{0}", "\u{0}",
+        reason: "https://bugs.swift.org/browse/SR-332"),
+    ComparisonTest("\r\n", "t"),
+    ComparisonTest("\r\n", "\n",
+        reason: "blocked on rdar://problem/19036555"),
+    ComparisonTest("\u{0}", "\u{0}\u{0}",
+        reason: "rdar://problem/19034601"),
+
+    // Whitespace
+    // U+000A LINE FEED (LF)
+    // U+000B LINE TABULATION
+    // U+000C FORM FEED (FF)
+    // U+0085 NEXT LINE (NEL)
+    // U+2028 LINE SEPARATOR
+    // U+2029 PARAGRAPH SEPARATOR
+    ComparisonTest("\u{0085}", "\n"),
+    ComparisonTest("\u{000b}", "\n"),
+    ComparisonTest("\u{000c}", "\n"),
+    ComparisonTest("\u{2028}", "\n"),
+    ComparisonTest("\u{2029}", "\n"),
+    ComparisonTest("\r\n\r\n", "\r\n"),
+
+    // U+0301 COMBINING ACUTE ACCENT
+    // U+00E1 LATIN SMALL LETTER A WITH ACUTE
+    ComparisonTest("a\u{301}", "\u{e1}"),
+    ComparisonTest("a", "a\u{301}"),
+    ComparisonTest("a", "\u{e1}"),
+
+    // U+304B HIRAGANA LETTER KA
+    // U+304C HIRAGANA LETTER GA
+    // U+3099 COMBINING KATAKANA-HIRAGANA VOICED SOUND MARK
+    ComparisonTest("\u{304b}", "\u{304b}"),
+    ComparisonTest("\u{304c}", "\u{304c}"),
+    ComparisonTest("\u{304b}", "\u{304c}"),
+    ComparisonTest("\u{304b}", "\u{304c}\u{3099}"),
+    ComparisonTest("\u{304c}", "\u{304b}\u{3099}"),
+    ComparisonTest("\u{304c}", "\u{304c}\u{3099}"),
+
+    // U+212B ANGSTROM SIGN
+    // U+030A COMBINING RING ABOVE
+    // U+00C5 LATIN CAPITAL LETTER A WITH RING ABOVE
+    ComparisonTest("\u{212b}", "A\u{30a}"),
+    ComparisonTest("\u{212b}", "\u{c5}"),
+    ComparisonTest("A\u{30a}", "\u{c5}"),
+    ComparisonTest("A\u{30a}", "a"),
+    ComparisonTest("A", "A\u{30a}"),
+
+    // U+2126 OHM SIGN
+    // U+03A9 GREEK CAPITAL LETTER OMEGA
+    ComparisonTest("\u{2126}", "\u{03a9}"),
+
+    // U+0323 COMBINING DOT BELOW
+    // U+0307 COMBINING DOT ABOVE
+    // U+1E63 LATIN SMALL LETTER S WITH DOT BELOW
+    // U+1E69 LATIN SMALL LETTER S WITH DOT BELOW AND DOT ABOVE
+    ComparisonTest("\u{1e69}", "s\u{323}\u{307}"),
+    ComparisonTest("\u{1e69}", "s\u{307}\u{323}"),
+    ComparisonTest("\u{1e69}", "\u{1e63}\u{307}"),
+    ComparisonTest("\u{1e63}", "s\u{323}"),
+    ComparisonTest("\u{1e63}\u{307}", "s\u{323}\u{307}"),
+    ComparisonTest("\u{1e63}\u{307}", "s\u{307}\u{323}"),
+    ComparisonTest("s\u{323}", "\u{1e69}"),
+
+    // U+FB01 LATIN SMALL LIGATURE FI
+    ComparisonTest("\u{fb01}", "\u{fb01}"),
+    ComparisonTest("fi", "\u{fb01}"),
+
+    // U+1F1E7 REGIONAL INDICATOR SYMBOL LETTER B
+    // \u{1F1E7}\u{1F1E7} Flag of Barbados
+    ComparisonTest("\u{1F1E7}", "\u{1F1E7}\u{1F1E7}",
+        reason: "https://bugs.swift.org/browse/SR-367"),
+
+    // Test that Unicode collation is performed in deterministic mode.
+    //
+    // U+0301 COMBINING ACUTE ACCENT
+    // U+0341 COMBINING ACUTE TONE MARK
+    // U+0954 DEVANAGARI ACUTE ACCENT
+    //
+    // Collation elements from DUCET:
+    // 0301  ; [.0000.0024.0002] # COMBINING ACUTE ACCENT
+    // 0341  ; [.0000.0024.0002] # COMBINING ACUTE TONE MARK
+    // 0954  ; [.0000.0024.0002] # DEVANAGARI ACUTE ACCENT
+    //
+    // U+0301 and U+0954 don't decompose in the canonical decomposition mapping.
+    // U+0341 has a canonical decomposition mapping of U+0301.
+    ComparisonTest("\u{0301}", "\u{0341}",
+        reason: "https://bugs.swift.org/browse/SR-243"),
+    ComparisonTest("\u{0301}", "\u{0954}"),
+    ComparisonTest("\u{0341}", "\u{0954}"),
+]
+
+enum Stack: ErrorType {
+    case Stack([UInt])
+}
+
+func checkHasPrefixHasSuffix(lhs: String, _ rhs: String, _ stack: [UInt]) -> Int {
+    if lhs == "" {
+        var failures = 0
+        failures += lhs.hasPrefix(rhs) ? 1 : 0
+        failures += lhs.hasSuffix(rhs) ? 1 : 0
+        return failures
+    }
+    if rhs == "" {
+        var failures = 0
+        failures += lhs.hasPrefix(rhs) ? 1 : 0
+        failures += lhs.hasSuffix(rhs) ? 1 : 0
+        return failures
+    }
+
+    // To determine the expected results, compare grapheme clusters,
+    // scalar-to-scalar, of the NFD form of the strings.
+    let lhsNFDGraphemeClusters =
+        lhs.decomposedStringWithCanonicalMapping.characters.map {
+            Array(String($0).unicodeScalars)
+    }
+    let rhsNFDGraphemeClusters =
+        rhs.decomposedStringWithCanonicalMapping.characters.map {
+            Array(String($0).unicodeScalars)
+    }
+    let expectHasPrefix = lhsNFDGraphemeClusters.startsWith(
+        rhsNFDGraphemeClusters, isEquivalent: (==))
+    let expectHasSuffix =
+        lhsNFDGraphemeClusters.lazy.reverse().startsWith(
+            rhsNFDGraphemeClusters.lazy.reverse(), isEquivalent: (==))
+
+    func testFailure(lhs: Bool, _ rhs: Bool, _ stack: [UInt]) -> Int {
+        guard lhs == rhs else {
+            // print(stack)
+            return 1
+        }
+        return 0
+    }
+
+    var failures = 0
+    failures += testFailure(expectHasPrefix, lhs.hasPrefix(rhs), stack + [#line])
+    failures += testFailure(expectHasSuffix, lhs.hasSuffix(rhs), stack + [#line])
+    return failures
+}
+
+extension TestNSString {
+    func test_PrefixSuffix() {
+#if !_runtime(_ObjC)
+        for test in comparisonTests {
+            var failures = 0
+            failures += checkHasPrefixHasSuffix(test.lhs, test.rhs, [test.loc, #line])
+            failures += checkHasPrefixHasSuffix(test.rhs, test.lhs, [test.loc, #line])
+
+            let fragment = "abc"
+            let combiner = "\u{0301}"
+
+            failures += checkHasPrefixHasSuffix(test.lhs + fragment, test.rhs, [test.loc, #line])
+            failures += checkHasPrefixHasSuffix(fragment + test.lhs, test.rhs, [test.loc, #line])
+            failures += checkHasPrefixHasSuffix(test.lhs + combiner, test.rhs, [test.loc, #line])
+            failures += checkHasPrefixHasSuffix(combiner + test.lhs, test.rhs, [test.loc, #line])
+
+            let fail = (failures > 0)
+            if fail {
+                // print("Prefix/Suffix case \(test.loc): \(failures) failures")
+                // print("Failures were\(test.xfail ? "" : " not") expected")
+            }
+            XCTAssert(test.xfail == fail, "Unexpected \(test.xfail ?"success":"failure"): \(test.loc)")
+        }
+#endif
+    }
+}
+
+func test_reflection() {
+    let testString: NSString = "some text here"
+    
+    let ql = PlaygroundQuickLook(reflecting: testString)
+
+    switch ql {
+    case .Text(let str): XCTAssertEqual(testString.bridge(), str)
+    default: XCTAssertTrue(false, "mismatched quicklook")
     }
 }

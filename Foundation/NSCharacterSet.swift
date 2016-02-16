@@ -30,7 +30,7 @@ let kCFCharacterSetIllegal = CFCharacterSetPredefinedSet.Illegal
 
 
 public class NSCharacterSet : NSObject, NSCopying, NSMutableCopying, NSCoding {
-    typealias CFType = CFCharacterSetRef
+    typealias CFType = CFCharacterSet
     private var _base = _CFInfo(typeID: CFCharacterSetGetTypeID())
     private var _hashValue = CFHashCode(0)
     private var _buffer = UnsafeMutablePointer<Void>()
@@ -41,14 +41,12 @@ public class NSCharacterSet : NSObject, NSCopying, NSMutableCopying, NSCoding {
         return unsafeBitCast(self, CFType.self)
     }
     
-    internal var _cfMutableObject: CFMutableCharacterSetRef {
-        return unsafeBitCast(self, CFMutableCharacterSetRef.self)
+    internal var _cfMutableObject: CFMutableCharacterSet {
+        return unsafeBitCast(self, CFMutableCharacterSet.self)
     }
     
     public override var hash: Int {
-        get {
-            return Int(bitPattern: CFHash(_cfObject))
-        }
+        return Int(bitPattern: CFHash(_cfObject))
     }
     
     public override func isEqual(object: AnyObject?) -> Bool {
@@ -60,9 +58,7 @@ public class NSCharacterSet : NSObject, NSCopying, NSMutableCopying, NSCoding {
     }
     
     public override var description: String {
-        get {
-            return CFCopyDescription(_cfObject)._swiftObject
-        }
+        return CFCopyDescription(_cfObject)._swiftObject
     }
 
     deinit {
@@ -161,15 +157,11 @@ public class NSCharacterSet : NSObject, NSCopying, NSMutableCopying, NSCoding {
     }
     
     public var bitmapRepresentation: NSData {
-        get {
-            return CFCharacterSetCreateBitmapRepresentation(kCFAllocatorSystemDefault, _cfObject)._nsObject
-        }
+        return CFCharacterSetCreateBitmapRepresentation(kCFAllocatorSystemDefault, _cfObject)._nsObject
     }
     
     public var invertedSet: NSCharacterSet {
-        get {
-            return CFCharacterSetCreateInvertedSet(kCFAllocatorSystemDefault, _cfObject)._nsObject
-        }
+        return CFCharacterSetCreateInvertedSet(kCFAllocatorSystemDefault, _cfObject)._nsObject
     }
     
     public func longCharacterIsMember(theLongChar: UTF32Char) -> Bool {
@@ -300,7 +292,7 @@ public class NSMutableCharacterSet : NSCharacterSet {
     }
 }
 
-extension CFCharacterSetRef : _NSBridgable {
+extension CFCharacterSet : _NSBridgable {
     typealias NSType = NSCharacterSet
     internal var _nsObject: NSType {
         return unsafeBitCast(self, NSType.self)

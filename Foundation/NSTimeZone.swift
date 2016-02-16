@@ -11,7 +11,7 @@
 import CoreFoundation
 
 public class NSTimeZone : NSObject, NSCopying, NSSecureCoding, NSCoding {
-    typealias CFType = CFTimeZoneRef
+    typealias CFType = CFTimeZone
     private var _base = _CFInfo(typeID: CFTimeZoneGetTypeID())
     private var _name = UnsafeMutablePointer<Void>()
     private var _data = UnsafeMutablePointer<Void>()
@@ -35,14 +35,32 @@ public class NSTimeZone : NSObject, NSCopying, NSSecureCoding, NSCoding {
         }
     }
     
-    public required init?(coder aDecoder: NSCoder) {
-        NSUnimplemented()
+    public convenience required init?(coder aDecoder: NSCoder) {
+        if aDecoder.allowsKeyedCoding {
+            let name = aDecoder.decodeObjectOfClass(NSString.self, forKey: "NS.name")
+            let data = aDecoder.decodeObjectOfClass(NSData.self, forKey: "NS.data")
+            
+            if name == nil {
+                return nil
+            }
+            
+            self.init(name: name!.bridge(), data: data)
+        } else {
+            if let name = aDecoder.decodeObject() as? NSString {
+                if aDecoder.versionForClassName("NSTimeZone") == 0 {
+                    self.init(name: name._swiftObject)
+                } else {
+                    let data = aDecoder.decodeObject() as? NSData
+                    self.init(name: name._swiftObject, data: data)
+                }
+            } else {
+                return nil
+            }
+        }
     }
     
     public override var hash: Int {
-        get {
-            return Int(bitPattern: CFHash(_cfObject))
-        }
+        return Int(bitPattern: CFHash(_cfObject))
     }
     
     public override func isEqual(object: AnyObject?) -> Bool {
@@ -54,9 +72,7 @@ public class NSTimeZone : NSObject, NSCopying, NSSecureCoding, NSCoding {
     }
     
     public override var description: String {
-        get {
-            return CFCopyDescription(_cfObject)._swiftObject
-        }
+        return CFCopyDescription(_cfObject)._swiftObject
     }
 
     deinit {
@@ -71,7 +87,12 @@ public class NSTimeZone : NSObject, NSCopying, NSSecureCoding, NSCoding {
     public convenience init?(abbreviation: String) { NSUnimplemented() }
 
     public func encodeWithCoder(aCoder: NSCoder) {
-        
+        if aCoder.allowsKeyedCoding {
+            aCoder.encodeObject(self.name.bridge(), forKey:"NS.name")
+            // darwin versions of this method can and will encode mutable data, however it is not required for compatability
+            aCoder.encodeObject(self.data, forKey:"NS.data")
+        } else {
+        }
     }
     
     public static func supportsSecureCoding() -> Bool {
@@ -87,22 +108,18 @@ public class NSTimeZone : NSObject, NSCopying, NSSecureCoding, NSCoding {
     }
     
     public var name: String {
-        get {
-            if self.dynamicType === NSTimeZone.self {
-                return CFTimeZoneGetName(_cfObject)._swiftObject
-            } else {
-                NSRequiresConcreteImplementation()
-            }
+        if self.dynamicType === NSTimeZone.self {
+            return CFTimeZoneGetName(_cfObject)._swiftObject
+        } else {
+            NSRequiresConcreteImplementation()
         }
     }
     
     public var data: NSData {
-        get {
-            if self.dynamicType === NSTimeZone.self {
-                return CFTimeZoneGetData(_cfObject)._nsObject
-            } else {
-                NSRequiresConcreteImplementation()
-            }
+        if self.dynamicType === NSTimeZone.self {
+            return CFTimeZoneGetData(_cfObject)._nsObject
+        } else {
+            NSRequiresConcreteImplementation()
         }
     }
     
@@ -168,7 +185,7 @@ extension NSTimeZone {
 
 extension NSTimeZone : _CFBridgable { }
 
-extension CFTimeZoneRef : _NSBridgable {
+extension CFTimeZone : _NSBridgable {
     typealias NSType = NSTimeZone
     internal var _nsObject : NSType {
         return unsafeBitCast(self, NSType.self)

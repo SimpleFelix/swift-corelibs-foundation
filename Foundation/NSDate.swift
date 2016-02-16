@@ -18,18 +18,14 @@ import CoreFoundation
 public typealias NSTimeInterval = Double
 
 public var NSTimeIntervalSince1970: Double {
-    get {
-        return 978307200.0
-    }
+    return 978307200.0
 }
 
 public class NSDate : NSObject, NSCopying, NSSecureCoding, NSCoding {
-    typealias CFType = CFDateRef
+    typealias CFType = CFDate
     
     public override var hash: Int {
-        get {
-            return Int(bitPattern: CFHash(_cfObject))
-        }
+        return Int(bitPattern: CFHash(_cfObject))
     }
     
     public override func isEqual(object: AnyObject?) -> Bool {
@@ -52,9 +48,7 @@ public class NSDate : NSObject, NSCopying, NSSecureCoding, NSCoding {
     internal let _timeIntervalSinceReferenceDate: NSTimeInterval
     
     public var timeIntervalSinceReferenceDate: NSTimeInterval {
-        get {
-            return _timeIntervalSinceReferenceDate
-        }
+        return _timeIntervalSinceReferenceDate
     }
     
     public convenience override init() {
@@ -71,8 +65,17 @@ public class NSDate : NSObject, NSCopying, NSSecureCoding, NSCoding {
         _timeIntervalSinceReferenceDate = ti
     }
     
-    public required init?(coder aDecoder: NSCoder) {
-        NSUnimplemented()
+    public convenience required init?(coder aDecoder: NSCoder) {
+        if aDecoder.allowsKeyedCoding {
+            let ti = aDecoder.decodeDoubleForKey("NS.time")
+            self.init(timeIntervalSinceReferenceDate: ti)
+        } else {
+            var ti: NSTimeInterval = 0.0
+            withUnsafeMutablePointer(&ti) { (ptr: UnsafeMutablePointer<Double>) -> Void in
+                aDecoder.decodeValueOfObjCType("d", at: UnsafeMutablePointer<Void>(ptr))
+            }
+            self.init(timeIntervalSinceReferenceDate: ti)
+        }
     }
     
     public override func copy() -> AnyObject {
@@ -88,7 +91,11 @@ public class NSDate : NSObject, NSCopying, NSSecureCoding, NSCoding {
     }
     
     public func encodeWithCoder(aCoder: NSCoder) {
-        
+	if aCoder.allowsKeyedCoding {
+	    aCoder.encodeDouble(_timeIntervalSinceReferenceDate, forKey: "NS.time")
+	} else {
+	    NSUnimplemented()
+	}
     }
 
     /**
@@ -105,14 +112,12 @@ public class NSDate : NSObject, NSCopying, NSSecureCoding, NSCoding {
      `descriptionWithCalendarFormat:timeZone:locale:`.
      */
     public override var description: String {
-        get {
-            let dateFormatterRef = CFDateFormatterCreate(kCFAllocatorSystemDefault, nil, kCFDateFormatterFullStyle, kCFDateFormatterFullStyle)
-            let timeZone = CFTimeZoneCreateWithTimeIntervalFromGMT(kCFAllocatorSystemDefault, 0.0)
-            CFDateFormatterSetProperty(dateFormatterRef, kCFDateFormatterTimeZoneKey, timeZone)
-            CFDateFormatterSetFormat(dateFormatterRef, "uuuu-MM-dd HH:mm:ss '+0000'"._cfObject)
+        let dateFormatterRef = CFDateFormatterCreate(kCFAllocatorSystemDefault, nil, kCFDateFormatterFullStyle, kCFDateFormatterFullStyle)
+        let timeZone = CFTimeZoneCreateWithTimeIntervalFromGMT(kCFAllocatorSystemDefault, 0.0)
+        CFDateFormatterSetProperty(dateFormatterRef, kCFDateFormatterTimeZoneKey, timeZone)
+        CFDateFormatterSetFormat(dateFormatterRef, "uuuu-MM-dd HH:mm:ss '+0000'"._cfObject)
 
-            return CFDateFormatterCreateStringWithDate(kCFAllocatorSystemDefault, dateFormatterRef, _cfObject)._swiftObject
-        }
+        return CFDateFormatterCreateStringWithDate(kCFAllocatorSystemDefault, dateFormatterRef, _cfObject)._swiftObject
     }
 
     /**
@@ -149,15 +154,11 @@ extension NSDate {
     }
     
     public var timeIntervalSinceNow: NSTimeInterval {
-        get {
-            return timeIntervalSinceDate(NSDate())
-        }
+        return timeIntervalSinceDate(NSDate())
     }
     
     public var timeIntervalSince1970: NSTimeInterval {
-        get {
-            return timeIntervalSinceReferenceDate + NSTimeIntervalSince1970
-        }
+        return timeIntervalSinceReferenceDate + NSTimeIntervalSince1970
     }
     
     public func dateByAddingTimeInterval(ti: NSTimeInterval) -> NSDate {
@@ -223,7 +224,7 @@ extension NSDate {
 
 extension NSDate : _CFBridgable { }
 
-extension CFDateRef : _NSBridgable {
+extension CFDate : _NSBridgable {
     typealias NSType = NSDate
     internal var _nsObject: NSType { return unsafeBitCast(self, NSType.self) }
 }

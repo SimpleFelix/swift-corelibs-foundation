@@ -25,9 +25,7 @@ internal final class _NSCFArray : NSMutableArray {
     }
     
     override var count: Int {
-        get {
-            return CFArrayGetCount(_cfObject)
-        }
+        return CFArrayGetCount(_cfObject)
     }
     
     override func objectAtIndex(index: Int) -> AnyObject {
@@ -41,6 +39,10 @@ internal final class _NSCFArray : NSMutableArray {
     
     override func removeObjectAtIndex(index: Int) {
         CFArrayRemoveValueAtIndex(_cfMutableObject, index)
+    }
+    
+    override var classForCoder: AnyClass {
+        return NSMutableArray.self
     }
 }
 

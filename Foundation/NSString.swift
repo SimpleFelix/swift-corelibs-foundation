@@ -82,7 +82,7 @@ extension String : _ObjectTypeBridgeable {
         if x.dynamicType == NSString.self || x.dynamicType == NSMutableString.self {
             result = x._storage
         } else if x.dynamicType == _NSCFString.self {
-            let cf = unsafeBitCast(x, CFStringRef.self)
+            let cf = unsafeBitCast(x, CFString.self)
             let str = CFStringGetCStringPtr(cf, CFStringEncoding(kCFStringEncodingUTF8))
             if str != nil {
                 result = String.fromCString(str)
@@ -210,12 +210,10 @@ public class NSString : NSObject, NSCopying, NSMutableCopying, NSSecureCoding, N
     internal var _storage: String
     
     public var length: Int {
-        get {
-            if self.dynamicType === NSString.self || self.dynamicType === NSMutableString.self {
-                return _storage.utf16.count
-            } else {
-                NSRequiresConcreteImplementation()
-            }
+        if self.dynamicType === NSString.self || self.dynamicType === NSMutableString.self {
+            return _storage.utf16.count
+        } else {
+            NSRequiresConcreteImplementation()
         }
     }
     
@@ -238,7 +236,26 @@ public class NSString : NSObject, NSCopying, NSMutableCopying, NSSecureCoding, N
     }
     
     public convenience required init?(coder aDecoder: NSCoder) {
-        NSUnimplemented()
+        if !aDecoder.allowsKeyedCoding {
+            let archiveVersion = aDecoder.versionForClassName("NSString")
+            if archiveVersion == 1 {
+                var length = 0
+                let buffer = aDecoder.decodeBytesWithReturnedLength(&length)
+                self.init(bytes: buffer, length: length, encoding: NSUTF8StringEncoding)
+            } else {
+                aDecoder.failWithError(NSError(domain: NSCocoaErrorDomain, code: NSCocoaError.CoderReadCorruptError.rawValue, userInfo: [
+                    "NSDebugDescription": "NSString cannot decode class version \(archiveVersion)"
+                    ]))
+                return nil
+            }
+        } else if aDecoder.dynamicType == NSKeyedUnarchiver.self || aDecoder.containsValueForKey("NS.string") {
+            let str = aDecoder._decodePropertyListForKey("NS.string") as! String
+            self.init(string: str)
+        } else {
+            var length = 0
+            let buffer = UnsafeMutablePointer<Void>(aDecoder.decodeBytesForKey("NS.bytes", returnedLength: &length))
+            self.init(bytes: buffer, length: length, encoding: NSUTF8StringEncoding)
+        }
     }
     
     public required convenience init(string aString: String) {
@@ -277,7 +294,11 @@ public class NSString : NSObject, NSCopying, NSMutableCopying, NSSecureCoding, N
     }
     
     public func encodeWithCoder(aCoder: NSCoder) {
-        
+        if let aKeyedCoder = aCoder as? NSKeyedArchiver {
+            aKeyedCoder._encodePropertyList(self, forKey: "NS.string")
+        } else {
+            aCoder.encodeObject(self)
+        }
     }
     
     public init(characters: UnsafePointer<unichar>, length: Int) {
@@ -432,7 +453,7 @@ extension NSString {
     }
     
     public func commonPrefixWithString(str: String, options mask: NSStringCompareOptions) -> String {
-        var currentSubstring: CFMutableStringRef?
+        var currentSubstring: CFMutableString?
         let isLiteral = mask.contains(.LiteralSearch)
         var lastMatch = NSRange()
         let selfLen = length
@@ -599,97 +620,73 @@ extension NSString {
     }
     
     public var doubleValue: Double {
-        get {
-            var start: Int = 0
-            var result = 0.0
-            _swiftObject.scan(NSCharacterSet.whitespaceCharacterSet(), locale: nil, locationToScanFrom: &start) { (value: Double) -> Void in
-                result = value
-            }
-            return result
+        var start: Int = 0
+        var result = 0.0
+        _swiftObject.scan(NSCharacterSet.whitespaceCharacterSet(), locale: nil, locationToScanFrom: &start) { (value: Double) -> Void in
+            result = value
         }
+        return result
     }
     
     public var floatValue: Float {
-        get {
-            var start: Int = 0
-            var result: Float = 0.0
-            _swiftObject.scan(NSCharacterSet.whitespaceCharacterSet(), locale: nil, locationToScanFrom: &start) { (value: Float) -> Void in
-                result = value
-            }
-            return result
+        var start: Int = 0
+        var result: Float = 0.0
+        _swiftObject.scan(NSCharacterSet.whitespaceCharacterSet(), locale: nil, locationToScanFrom: &start) { (value: Float) -> Void in
+            result = value
         }
+        return result
     }
     
     public var intValue: Int32 {
-        get {
-            return NSScanner(string: _swiftObject).scanInt() ?? 0
-        }
+        return NSScanner(string: _swiftObject).scanInt() ?? 0
     }
     
     public var integerValue: Int {
-        get {
-            let scanner = NSScanner(string: _swiftObject)
-            var value: Int = 0
-            scanner.scanInteger(&value)
-            return value
-        }
+        let scanner = NSScanner(string: _swiftObject)
+        var value: Int = 0
+        scanner.scanInteger(&value)
+        return value
     }
     
     public var longLongValue: Int64 {
-        get {
-            return NSScanner(string: _swiftObject).scanLongLong() ?? 0
-        }
+        return NSScanner(string: _swiftObject).scanLongLong() ?? 0
     }
     
     public var boolValue: Bool {
-        get {
-            let scanner = NSScanner(string: _swiftObject)
-            // skip initial whitespace if present
-            scanner.scanCharactersFromSet(NSCharacterSet.whitespaceCharacterSet())
-            // scan a single optional '+' or '-' character, followed by zeroes
-            if scanner.scanString(string: "+") == nil {
-                scanner.scanString(string: "-")
-            }
-            // scan any following zeroes
-            scanner.scanCharactersFromSet(NSCharacterSet(charactersInString: "0"))
-            return scanner.scanCharactersFromSet(NSCharacterSet(charactersInString: "tTyY123456789")) != nil
+        let scanner = NSScanner(string: _swiftObject)
+        // skip initial whitespace if present
+        scanner.scanCharactersFromSet(NSCharacterSet.whitespaceCharacterSet())
+        // scan a single optional '+' or '-' character, followed by zeroes
+        if scanner.scanString(string: "+") == nil {
+            scanner.scanString(string: "-")
         }
+        // scan any following zeroes
+        scanner.scanCharactersFromSet(NSCharacterSet(charactersInString: "0"))
+        return scanner.scanCharactersFromSet(NSCharacterSet(charactersInString: "tTyY123456789")) != nil
     }
     
     public var uppercaseString: String {
-        get {
-            return uppercaseStringWithLocale(nil)
-        }
+        return uppercaseStringWithLocale(nil)
     }
 
     public var lowercaseString: String {
-        get {
-            return lowercaseStringWithLocale(nil)
-        }
+        return lowercaseStringWithLocale(nil)
     }
     
     public var capitalizedString: String {
-        get {
-            return capitalizedStringWithLocale(nil)
-        }
+        return capitalizedStringWithLocale(nil)
     }
     
     public var localizedUppercaseString: String {
-        get {
-            return uppercaseStringWithLocale(NSLocale.currentLocale())
-        }
+        return uppercaseStringWithLocale(NSLocale.currentLocale())
     }
     
     public var localizedLowercaseString: String {
-        get {
-            return lowercaseStringWithLocale(NSLocale.currentLocale())
-        }
+        return lowercaseStringWithLocale(NSLocale.currentLocale())
     }
     
     public var localizedCapitalizedString: String {
-        get {
-            return capitalizedStringWithLocale(NSLocale.currentLocale())
-        }
+        return capitalizedStringWithLocale(NSLocale.currentLocale())
     }
     
     public func uppercaseStringWithLocale(locale: NSLocale?) -> String {
@@ -829,24 +826,18 @@ extension NSString {
     }
     
     public var UTF8String: UnsafePointer<Int8> {
-        get {
-            return _bytesInEncoding(self, NSUTF8StringEncoding, false, false, false)
-        }
+        return _bytesInEncoding(self, NSUTF8StringEncoding, false, false, false)
     }
     
     public var fastestEncoding: UInt {
-        get {
-            return NSUnicodeStringEncoding
-        }
+        return NSUnicodeStringEncoding
     }
     
     public var smallestEncoding: UInt {
-        get {
-            if canBeConvertedToEncoding(NSASCIIStringEncoding) {
-                return NSASCIIStringEncoding
-            }
-            return NSUnicodeStringEncoding
+        if canBeConvertedToEncoding(NSASCIIStringEncoding) {
+            return NSASCIIStringEncoding
         }
+        return NSUnicodeStringEncoding
     }
     
     public func dataUsingEncoding(encoding: UInt, allowLossyConversion lossy: Bool) -> NSData? {
@@ -991,39 +982,31 @@ extension NSString {
     }
     
     public var decomposedStringWithCanonicalMapping: String {
-        get {
-            let string = CFStringCreateMutable(kCFAllocatorSystemDefault, 0)
-            CFStringReplaceAll(string, self._cfObject)
-            CFStringNormalize(string, kCFStringNormalizationFormD)
-            return string._swiftObject
-        }
+        let string = CFStringCreateMutable(kCFAllocatorSystemDefault, 0)
+        CFStringReplaceAll(string, self._cfObject)
+        CFStringNormalize(string, kCFStringNormalizationFormD)
+        return string._swiftObject
     }
     
     public var precomposedStringWithCanonicalMapping: String {
-        get {
-            let string = CFStringCreateMutable(kCFAllocatorSystemDefault, 0)
-            CFStringReplaceAll(string, self._cfObject)
-            CFStringNormalize(string, kCFStringNormalizationFormC)
-            return string._swiftObject
-        }
+        let string = CFStringCreateMutable(kCFAllocatorSystemDefault, 0)
+        CFStringReplaceAll(string, self._cfObject)
+        CFStringNormalize(string, kCFStringNormalizationFormC)
+        return string._swiftObject
     }
     
     public var decomposedStringWithCompatibilityMapping: String {
-        get {
-            let string = CFStringCreateMutable(kCFAllocatorSystemDefault, 0)
-            CFStringReplaceAll(string, self._cfObject)
-            CFStringNormalize(string, kCFStringNormalizationFormKD)
-            return string._swiftObject
-        }
+        let string = CFStringCreateMutable(kCFAllocatorSystemDefault, 0)
+        CFStringReplaceAll(string, self._cfObject)
+        CFStringNormalize(string, kCFStringNormalizationFormKD)
+        return string._swiftObject
     }
     
     public var precomposedStringWithCompatibilityMapping: String {
-        get {
-            let string = CFStringCreateMutable(kCFAllocatorSystemDefault, 0)
-            CFStringReplaceAll(string, self._cfObject)
-            CFStringNormalize(string, kCFStringNormalizationFormKC)
-            return string._swiftObject
-        }
+        let string = CFStringCreateMutable(kCFAllocatorSystemDefault, 0)
+        CFStringReplaceAll(string, self._cfObject)
+        CFStringNormalize(string, kCFStringNormalizationFormKC)
+        return string._swiftObject
     }
     
     public func componentsSeparatedByString(separator: String) -> [String] {
@@ -1274,13 +1257,9 @@ extension NSString {
             return nil
         }
     }
-    
+
     public convenience init(contentsOfURL url: NSURL, encoding enc: UInt) throws {
-        NSUnimplemented()    
-    }
-    
-    public convenience init(contentsOfFile path: String, encoding enc: UInt) throws {
-        let readResult = try NSData.readBytesFromFileWithExtendedAttributes(path, options: [])
+        let readResult = try NSData.init(contentsOfURL: url, options: [])
         guard let cf = CFStringCreateWithBytes(kCFAllocatorDefault, UnsafePointer<UInt8>(readResult.bytes), readResult.length, CFStringConvertNSStringEncodingToEncoding(enc), true) else {
             throw NSError(domain: NSCocoaErrorDomain, code: NSCocoaError.FileReadInapplicableStringEncodingError.rawValue, userInfo: [
                 "NSDebugDescription" : "Unable to create a string using the specified encoding."
@@ -1294,6 +1273,10 @@ extension NSString {
                 "NSDebugDescription" : "Unable to bridge CFString to String."
                 ])
         }
+    }
+
+    public convenience init(contentsOfFile path: String, encoding enc: UInt) throws {
+        try self.init(contentsOfURL: NSURL(fileURLWithPath: path), encoding: enc)
     }
     
     public convenience init(contentsOfURL url: NSURL, usedEncoding enc: UnsafeMutablePointer<UInt>) throws {
@@ -1329,7 +1312,11 @@ public class NSMutableString : NSString {
     }
 
     public convenience required init?(coder aDecoder: NSCoder) {
-        NSUnimplemented()
+        guard let str = NSString(coder: aDecoder) else {
+            return nil
+        }
+        
+        self.init(string: str.bridge())
     }
 
     public required convenience init(unicodeScalarLiteral value: StaticString) {
@@ -1443,7 +1430,7 @@ extension String {
 
 extension NSString : _CFBridgable, _SwiftBridgable {
     typealias SwiftType = String
-    internal var _cfObject: CFStringRef { return unsafeBitCast(self, CFStringRef.self) }
+    internal var _cfObject: CFString { return unsafeBitCast(self, CFString.self) }
     internal var _swiftObject: String {
         var str: String?
         String._forceBridgeFromObject(self, result: &str)
@@ -1452,10 +1439,10 @@ extension NSString : _CFBridgable, _SwiftBridgable {
 }
 
 extension NSMutableString {
-    internal var _cfMutableObject: CFMutableStringRef { return unsafeBitCast(self, CFMutableStringRef.self) }
+    internal var _cfMutableObject: CFMutableString { return unsafeBitCast(self, CFMutableString.self) }
 }
 
-extension CFStringRef : _NSBridgable, _SwiftBridgable {
+extension CFString : _NSBridgable, _SwiftBridgable {
     typealias NSType = NSString
     typealias SwiftType = String
     internal var _nsObject: NSType { return unsafeBitCast(self, NSString.self) }
@@ -1464,7 +1451,7 @@ extension CFStringRef : _NSBridgable, _SwiftBridgable {
 
 extension String : _NSBridgable, _CFBridgable {
     typealias NSType = NSString
-    typealias CFType = CFStringRef
+    typealias CFType = CFString
     internal var _nsObject: NSType { return _bridgeToObject() }
     internal var _cfObject: CFType { return _nsObject._cfObject }
 }
@@ -1475,4 +1462,10 @@ extension String : Bridgeable {
 
 extension NSString : Bridgeable {
     public func bridge() -> String { return _swiftObject }
+}
+
+extension NSString : CustomPlaygroundQuickLookable {
+    public func customPlaygroundQuickLook() -> PlaygroundQuickLook {
+        return .Text(self.bridge())
+    }
 }

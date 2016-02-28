@@ -31,12 +31,10 @@ public let NSFilePathErrorKey: String = "NSFilePathErrorKey"
 
 
 public class NSError : NSObject, NSCopying, NSSecureCoding, NSCoding {
-    typealias CFType = CFErrorRef
+    typealias CFType = CFError
     
     internal var _cfObject: CFType {
-        get {
-            return CFErrorCreate(kCFAllocatorSystemDefault, domain._cfObject, code, nil)
-        }
+        return CFErrorCreate(kCFAllocatorSystemDefault, domain._cfObject, code, nil)
     }
     
     // ErrorType forbids this being internal
@@ -55,8 +53,35 @@ public class NSError : NSObject, NSCopying, NSSecureCoding, NSCoding {
     }
     
     public required init?(coder aDecoder: NSCoder) {
-        _domain = "None"
-        _code = 0
+        if aDecoder.allowsKeyedCoding {
+            _code = aDecoder.decodeIntegerForKey("NSCode")
+            _domain = aDecoder.decodeObjectOfClass(NSString.self, forKey: "NSDomain")!._swiftObject
+            if let info = aDecoder.decodeObjectOfClasses([NSSet.self, NSDictionary.self, NSArray.self, NSString.self, NSNumber.self, NSData.self, NSURL.self], forKey: "NSUserInfo") as? NSDictionary {
+                var filteredUserInfo = [String : Any]()
+                // user info must be filtered so that the keys are all strings
+                info.enumerateKeysAndObjectsUsingBlock() {
+                    if let key = $0.0 as? NSString {
+                        filteredUserInfo[key._swiftObject] = $0.1
+                    }
+                }
+                _userInfo = filteredUserInfo
+            }
+        } else {
+            var codeValue: Int32 = 0
+            aDecoder.decodeValueOfObjCType("i", at: &codeValue)
+            _code = Int(codeValue)
+            _domain = (aDecoder.decodeObject() as? NSString)!._swiftObject
+            if let info = aDecoder.decodeObject() as? NSDictionary {
+                var filteredUserInfo = [String : Any]()
+                // user info must be filtered so that the keys are all strings
+                info.enumerateKeysAndObjectsUsingBlock() {
+                    if let key = $0.0 as? NSString {
+                        filteredUserInfo[key._swiftObject] = $0.1
+                    }
+                }
+                _userInfo = filteredUserInfo
+            }
+        }
     }
     
     public static func supportsSecureCoding() -> Bool {
@@ -64,7 +89,16 @@ public class NSError : NSObject, NSCopying, NSSecureCoding, NSCoding {
     }
     
     public func encodeWithCoder(aCoder: NSCoder) {
-        
+        if aCoder.allowsKeyedCoding {
+            aCoder.encodeObject(_domain.bridge(), forKey: "NSDomain")
+            aCoder.encodeInt(Int32(_code), forKey: "NSCode")
+            aCoder.encodeObject(_userInfo?.bridge(), forKey: "NSUserInfo")
+        } else {
+            var codeValue: Int32 = Int32(self._code)
+            aCoder.encodeValueOfObjCType("i", at: &codeValue)
+            aCoder.encodeObject(self._domain.bridge())
+            aCoder.encodeObject(self._userInfo?.bridge())
+        }
     }
     
     public override func copy() -> AnyObject {
@@ -76,65 +110,47 @@ public class NSError : NSObject, NSCopying, NSSecureCoding, NSCoding {
     }
     
     public var domain: String {
-        get {
-            return _domain
-        }
+        return _domain
     }
     
     public var code: Int {
-        get {
-            return _code
-        }
+        return _code
     }
 
     /// - Experiment: This is a draft API currently under consideration for official import into Foundation
     /// - Note: This API differs from Darwin because it uses [String : Any] as a type instead of [String : AnyObject]. This allows the use of Swift value types.
     public var userInfo: [String : Any] {
-        get {
-            if let info = _userInfo {
-                return info
-            } else {
-                return Dictionary<String, Any>()
-            }
+        if let info = _userInfo {
+            return info
+        } else {
+            return Dictionary<String, Any>()
         }
     }
     
     public var localizedDescription: String {
-        get {
-            let desc = userInfo[NSLocalizedDescriptionKey] as? String
-            
-            return desc ?? "The operation could not be completed"
-        }
+        let desc = userInfo[NSLocalizedDescriptionKey] as? String
+        
+        return desc ?? "The operation could not be completed"
     }
     
     public var localizedFailureReason: String? {
-        get {
-            return userInfo[NSLocalizedFailureReasonErrorKey] as? String
-        }
+        return userInfo[NSLocalizedFailureReasonErrorKey] as? String
     }
     
     public var localizedRecoverySuggestion: String? {
-        get {
-            return userInfo[NSLocalizedRecoverySuggestionErrorKey] as? String
-        }
+        return userInfo[NSLocalizedRecoverySuggestionErrorKey] as? String
     }
 
     public var localizedRecoveryOptions: [String]? {
-        get {
-            return userInfo[NSLocalizedRecoveryOptionsErrorKey] as? [String]
-        }
+        return userInfo[NSLocalizedRecoveryOptionsErrorKey] as? [String]
     }
     
     public var recoveryAttempter: AnyObject? {
-        get {
-            return userInfo[NSRecoveryAttempterErrorKey] as? AnyObject
-        }
+        return userInfo[NSRecoveryAttempterErrorKey] as? AnyObject
     }
     
     public var helpAnchor: String? {
-        get {
-            return userInfo[NSHelpAnchorErrorKey] as? String
-        }
+        return userInfo[NSHelpAnchorErrorKey] as? String
     }
     
     internal typealias NSErrorProvider = (error: NSError, key: String) -> AnyObject?
@@ -152,7 +168,7 @@ public class NSError : NSObject, NSCopying, NSSecureCoding, NSCoding {
 extension NSError : ErrorType { }
 
 extension NSError : _CFBridgable { }
-extension CFErrorRef : _NSBridgable {
+extension CFError : _NSBridgable {
     typealias NSType = NSError
     internal var _nsObject: NSType {
         let userInfo = CFErrorCopyUserInfo(self)._swiftObject

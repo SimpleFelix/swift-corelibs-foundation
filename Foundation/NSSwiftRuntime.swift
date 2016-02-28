@@ -54,9 +54,7 @@ internal class __NSCFType : NSObject {
     }
     
     override var hash: Int {
-        get {
-            return Int(bitPattern: CFHash(self))
-        }
+        return Int(bitPattern: CFHash(self))
     }
     
     override func isEqual(object: AnyObject?) -> Bool {
@@ -68,9 +66,7 @@ internal class __NSCFType : NSObject {
     }
     
     override var description: String {
-        get {
-            return CFCopyDescription(unsafeBitCast(self, CFTypeRef.self))._swiftObject
-        }
+        return CFCopyDescription(unsafeBitCast(self, CFTypeRef.self))._swiftObject
     }
 
     deinit {
@@ -387,7 +383,7 @@ public protocol Bridgeable {
 }
 
 #if os(OSX) || os(iOS)
-internal typealias _DarwinCompatibleBoolean = DarwinBoolean
+    internal typealias _DarwinCompatibleBoolean = DarwinBoolean
 #else
-internal typealias _DarwinCompatibleBoolean = Bool
+    internal typealias _DarwinCompatibleBoolean = Bool
 #endif

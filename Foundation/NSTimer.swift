@@ -16,7 +16,7 @@ internal func __NSFireTimer(timer: CFRunLoopTimer!, info: UnsafeMutablePointer<V
 }
 
 public class NSTimer : NSObject {
-    typealias CFType = CFRunLoopTimerRef
+    typealias CFType = CFRunLoopTimer
     
     internal var _cfObject: CFType {
         get {
@@ -39,7 +39,7 @@ public class NSTimer : NSObject {
         _fire = fire
         var context = CFRunLoopTimerContext()
         context.info = UnsafeMutablePointer<Void>(retained: self)
-        let timer = withUnsafeMutablePointer(&context) { (ctx: UnsafeMutablePointer<CFRunLoopTimerContext>) -> CFRunLoopTimerRef in
+        let timer = withUnsafeMutablePointer(&context) { (ctx: UnsafeMutablePointer<CFRunLoopTimerContext>) -> CFRunLoopTimer in
             var t = interval
             if !repeats {
                 t = 0.0
@@ -79,9 +79,7 @@ public class NSTimer : NSObject {
     }
     
     public var timeInterval: NSTimeInterval {
-        get {
-            return CFRunLoopTimerGetInterval(_timer!)
-        }
+        return CFRunLoopTimerGetInterval(_timer!)
     }
 
     public var tolerance: NSTimeInterval {
@@ -98,8 +96,6 @@ public class NSTimer : NSObject {
     }
 
     public var valid: Bool {
-        get {
-            return CFRunLoopTimerIsValid(_timer!)
-        }
+        return CFRunLoopTimerIsValid(_timer!)
     }
 }

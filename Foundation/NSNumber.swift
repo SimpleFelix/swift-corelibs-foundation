@@ -11,6 +11,12 @@
 import CoreFoundation
 
 #if os(OSX) || os(iOS)
+internal let kCFNumberSInt8Type = CFNumberType.SInt8Type
+internal let kCFNumberSInt16Type = CFNumberType.SInt16Type
+internal let kCFNumberSInt32Type = CFNumberType.SInt32Type
+internal let kCFNumberSInt64Type = CFNumberType.SInt64Type
+internal let kCFNumberFloat32Type = CFNumberType.Float32Type
+internal let kCFNumberFloat64Type = CFNumberType.Float64Type
 internal let kCFNumberCharType = CFNumberType.CharType
 internal let kCFNumberShortType = CFNumberType.ShortType
 internal let kCFNumberIntType = CFNumberType.IntType
@@ -18,6 +24,9 @@ internal let kCFNumberLongType = CFNumberType.LongType
 internal let kCFNumberLongLongType = CFNumberType.LongLongType
 internal let kCFNumberFloatType = CFNumberType.FloatType
 internal let kCFNumberDoubleType = CFNumberType.DoubleType
+internal let kCFNumberCFIndexType = CFNumberType.CFIndexType
+internal let kCFNumberNSIntegerType = CFNumberType.NSIntegerType
+internal let kCFNumberCGFloatType = CFNumberType.CGFloatType
 #endif
 
 extension Int : _ObjectTypeBridgeable {
@@ -115,7 +124,7 @@ extension Bool : _ObjectTypeBridgeable {
 }
 
 extension Bool : _CFBridgable {
-    typealias CFType = CFBooleanRef
+    typealias CFType = CFBoolean
     var _cfObject: CFType {
         return self ? kCFBooleanTrue : kCFBooleanFalse
     }
@@ -126,21 +135,17 @@ extension NSNumber : FloatLiteralConvertible, IntegerLiteralConvertible, Boolean
 }
 
 public class NSNumber : NSValue {
-    typealias CFType = CFNumberRef
+    typealias CFType = CFNumber
     // This layout MUST be the same as CFNumber so that they are bridgeable
     private var _base = _CFInfo(typeID: CFNumberGetTypeID())
     private var _pad: UInt64 = 0
     
     internal var _cfObject: CFType {
-        get {
-            return unsafeBitCast(self, CFType.self)
-        }
+        return unsafeBitCast(self, CFType.self)
     }
     
     public override var hash: Int {
-        get {
-            return Int(bitPattern: CFHash(_cfObject))
-        }
+        return Int(bitPattern: CFHash(_cfObject))
     }
     
     public override func isEqual(object: AnyObject?) -> Bool {
@@ -230,155 +235,203 @@ public class NSNumber : NSValue {
         _CFNumberInitUInt(_cfObject, value)
     }
 
+    public required convenience init(bytes buffer: UnsafePointer<Void>, objCType: UnsafePointer<Int8>) {
+        guard let type = _NSSimpleObjCType(UInt8(objCType.memory)) else {
+            fatalError("NSNumber.init: unsupported type encoding spec '\(String.fromCString(objCType))'")
+        }
+        switch type {
+        case .Bool:
+            self.init(bool:UnsafePointer<Bool>(buffer).memory)
+            break
+        case .Char:
+            self.init(char:UnsafePointer<Int8>(buffer).memory)
+            break
+        case .UChar:
+            self.init(unsignedChar:UnsafePointer<UInt8>(buffer).memory)
+            break
+        case .Short:
+            self.init(short:UnsafePointer<Int16>(buffer).memory)
+            break
+        case .UShort:
+            self.init(unsignedShort:UnsafePointer<UInt16>(buffer).memory)
+            break
+        case .Int, .Long:
+            self.init(int:UnsafePointer<Int32>(buffer).memory)
+            break
+        case .UInt, .ULong:
+            self.init(unsignedInt:UnsafePointer<UInt32>(buffer).memory)
+            break
+        case .LongLong:
+            self.init(longLong:UnsafePointer<Int64>(buffer).memory)
+            break
+        case .ULongLong:
+            self.init(unsignedLongLong:UnsafePointer<UInt64>(buffer).memory)
+            break
+        case .Float:
+            self.init(float:UnsafePointer<Float>(buffer).memory)
+            break
+        case .Double:
+            self.init(double:UnsafePointer<Double>(buffer).memory)
+            break
+        default:
+            fatalError("NSNumber.init: unsupported type encoding spec '\(String.fromCString(objCType))'")
+            break
+        }
+    }
     
-    public required init?(coder aDecoder: NSCoder) {
-        super.init()
+    public required convenience init?(coder aDecoder: NSCoder) {
+        if !aDecoder.allowsKeyedCoding {
+            var objCType = UnsafeMutablePointer<Int8>()
+            var size: Int = 0
+            NSGetSizeAndAlignment(objCType, &size, nil)
+            let buffer = malloc(size)
+            aDecoder.decodeValueOfObjCType(objCType, at: buffer)
+            withUnsafeMutablePointer(&objCType, { (ptr: UnsafeMutablePointer<UnsafeMutablePointer<Int8>>) -> Void in
+                aDecoder.decodeValueOfObjCType(String(_NSSimpleObjCType.CharPtr), at: UnsafeMutablePointer<Void>(ptr))
+            })
+            if objCType == nil {
+                return nil
+            }
+            self.init(bytes: buffer, objCType: objCType)
+            free(buffer)
+        } else if aDecoder.dynamicType == NSKeyedUnarchiver.self || aDecoder.containsValueForKey("NS.number") {
+            let number = aDecoder._decodePropertyListForKey("NS.number")
+            if let val = number as? Double {
+                self.init(double:val)
+            } else if let val = number as? Int {
+                self.init(long:val)
+            } else if let val = number as? Bool {
+                self.init(bool:val)
+            } else {
+                return nil
+            }
+        } else {
+            if aDecoder.containsValueForKey("NS.boolval") {
+                self.init(bool: aDecoder.decodeBoolForKey("NS.boolval"))
+            } else if aDecoder.containsValueForKey("NS.intval") {
+                self.init(longLong: aDecoder.decodeInt64ForKey("NS.intval"))
+            } else if aDecoder.containsValueForKey("NS.dblval") {
+                self.init(double: aDecoder.decodeDoubleForKey("NS.dblval"))
+            } else {
+                return nil
+            }
+        }
     }
 
     public var charValue: Int8 {
-        get {
-            var val: Int8 = 0
-            withUnsafeMutablePointer(&val) { (value: UnsafeMutablePointer<Int8>) -> Void in
-                CFNumberGetValue(_cfObject, kCFNumberCharType, value)
-            }
-            return val
+        var val: Int8 = 0
+        withUnsafeMutablePointer(&val) { (value: UnsafeMutablePointer<Int8>) -> Void in
+            CFNumberGetValue(_cfObject, kCFNumberCharType, value)
         }
+        return val
     }
 
     public var unsignedCharValue: UInt8 {
-        get {
-            var val: UInt8 = 0
-            withUnsafeMutablePointer(&val) { (value: UnsafeMutablePointer<UInt8>) -> Void in
-                CFNumberGetValue(_cfObject, kCFNumberCharType, value)
-            }
-            return val
+        var val: UInt8 = 0
+        withUnsafeMutablePointer(&val) { (value: UnsafeMutablePointer<UInt8>) -> Void in
+            CFNumberGetValue(_cfObject, kCFNumberCharType, value)
         }
+        return val
     }
     
     public var shortValue: Int16 {
-        get {
-            var val: Int16 = 0
-            withUnsafeMutablePointer(&val) { (value: UnsafeMutablePointer<Int16>) -> Void in
-                CFNumberGetValue(_cfObject, kCFNumberShortType, value)
-            }
-            return val
+        var val: Int16 = 0
+        withUnsafeMutablePointer(&val) { (value: UnsafeMutablePointer<Int16>) -> Void in
+            CFNumberGetValue(_cfObject, kCFNumberShortType, value)
         }
+        return val
     }
     
     public var unsignedShortValue: UInt16 {
-        get {
-            var val: UInt16 = 0
-            withUnsafeMutablePointer(&val) { (value: UnsafeMutablePointer<UInt16>) -> Void in
-                CFNumberGetValue(_cfObject, kCFNumberShortType, value)
-            }
-            return val
+        var val: UInt16 = 0
+        withUnsafeMutablePointer(&val) { (value: UnsafeMutablePointer<UInt16>) -> Void in
+            CFNumberGetValue(_cfObject, kCFNumberShortType, value)
         }
+        return val
     }
     
     public var intValue: Int32 {
-        get {
-            var val: Int32 = 0
-            withUnsafeMutablePointer(&val) { (value: UnsafeMutablePointer<Int32>) -> Void in
-                CFNumberGetValue(_cfObject, kCFNumberIntType, value)
-            }
-            return val
+        var val: Int32 = 0
+        withUnsafeMutablePointer(&val) { (value: UnsafeMutablePointer<Int32>) -> Void in
+            CFNumberGetValue(_cfObject, kCFNumberIntType, value)
         }
+        return val
     }
     
     public var unsignedIntValue: UInt32 {
-        get {
-            var val: UInt32 = 0
-            withUnsafeMutablePointer(&val) { (value: UnsafeMutablePointer<UInt32>) -> Void in
-                CFNumberGetValue(_cfObject, kCFNumberIntType, value)
-            }
-            return val
+        var val: UInt32 = 0
+        withUnsafeMutablePointer(&val) { (value: UnsafeMutablePointer<UInt32>) -> Void in
+            CFNumberGetValue(_cfObject, kCFNumberIntType, value)
         }
+        return val
     }
     
     public var longValue: Int {
-        get {
-            var val: Int = 0
-            withUnsafeMutablePointer(&val) { (value: UnsafeMutablePointer<Int>) -> Void in
-                CFNumberGetValue(_cfObject, kCFNumberLongType, value)
-            }
-            return val
+        var val: Int = 0
+        withUnsafeMutablePointer(&val) { (value: UnsafeMutablePointer<Int>) -> Void in
+            CFNumberGetValue(_cfObject, kCFNumberLongType, value)
         }
+        return val
     }
     
     public var unsignedLongValue: UInt {
-        get {
-            var val: UInt = 0
-            withUnsafeMutablePointer(&val) { (value: UnsafeMutablePointer<UInt>) -> Void in
-                CFNumberGetValue(_cfObject, kCFNumberLongType, value)
-            }
-            return val
+        var val: UInt = 0
+        withUnsafeMutablePointer(&val) { (value: UnsafeMutablePointer<UInt>) -> Void in
+            CFNumberGetValue(_cfObject, kCFNumberLongType, value)
         }
+        return val
     }
     
     public var longLongValue: Int64 {
-        get {
-            var val: Int64 = 0
-            withUnsafeMutablePointer(&val) { (value: UnsafeMutablePointer<Int64>) -> Void in
-                CFNumberGetValue(_cfObject, kCFNumberLongLongType, value)
-            }
-            return val
+        var val: Int64 = 0
+        withUnsafeMutablePointer(&val) { (value: UnsafeMutablePointer<Int64>) -> Void in
+            CFNumberGetValue(_cfObject, kCFNumberLongLongType, value)
         }
+        return val
     }
     
     public var unsignedLongLongValue: UInt64 {
-        get {
-            var val: UInt64 = 0
-            withUnsafeMutablePointer(&val) { (value: UnsafeMutablePointer<UInt64>) -> Void in
-                CFNumberGetValue(_cfObject, kCFNumberLongLongType, value)
-            }
-            return val
+        var val: UInt64 = 0
+        withUnsafeMutablePointer(&val) { (value: UnsafeMutablePointer<UInt64>) -> Void in
+            CFNumberGetValue(_cfObject, kCFNumberLongLongType, value)
         }
+        return val
     }
     
     public var floatValue: Float {
-        get {
-            var val: Float = 0
-            withUnsafeMutablePointer(&val) { (value: UnsafeMutablePointer<Float>) -> Void in
-                CFNumberGetValue(_cfObject, kCFNumberFloatType, value)
-            }
-            return val
+        var val: Float = 0
+        withUnsafeMutablePointer(&val) { (value: UnsafeMutablePointer<Float>) -> Void in
+            CFNumberGetValue(_cfObject, kCFNumberFloatType, value)
         }
+        return val
     }
     
     public var doubleValue: Double {
-        get {
-            var val: Double = 0
-            withUnsafeMutablePointer(&val) { (value: UnsafeMutablePointer<Double>) -> Void in
-                CFNumberGetValue(_cfObject, kCFNumberDoubleType, value)
-            }
-            return val
+        var val: Double = 0
+        withUnsafeMutablePointer(&val) { (value: UnsafeMutablePointer<Double>) -> Void in
+            CFNumberGetValue(_cfObject, kCFNumberDoubleType, value)
         }
+        return val
     }
     
     public var boolValue: Bool {
-        get {
-            return longLongValue != 0
-        }
+        return longLongValue != 0
     }
     
     public var integerValue: Int {
-        get {
-            var val: Int = 0
-            withUnsafeMutablePointer(&val) { (value: UnsafeMutablePointer<Int>) -> Void in
-                CFNumberGetValue(_cfObject, kCFNumberLongType, value)
-            }
-            return val
+        var val: Int = 0
+        withUnsafeMutablePointer(&val) { (value: UnsafeMutablePointer<Int>) -> Void in
+            CFNumberGetValue(_cfObject, kCFNumberLongType, value)
         }
+        return val
     }
     
     public var unsignedIntegerValue: UInt {
-        get {
-            var val: UInt = 0
-            withUnsafeMutablePointer(&val) { (value: UnsafeMutablePointer<UInt>) -> Void in
-                CFNumberGetValue(_cfObject, kCFNumberLongType, value)
-            }
-            return val
+        var val: UInt = 0
+        withUnsafeMutablePointer(&val) { (value: UnsafeMutablePointer<UInt>) -> Void in
+            CFNumberGetValue(_cfObject, kCFNumberLongType, value)
         }
+        return val
     }
     
     /// Create an instance initialized to `value`.
@@ -412,7 +465,53 @@ public class NSNumber : NSValue {
     }
 }
 
-extension CFNumberRef : _NSBridgable {
+extension CFNumber : _NSBridgable {
     typealias NSType = NSNumber
     internal var _nsObject: NSType { return unsafeBitCast(self, NSType.self) }
+}
+
+extension NSNumber : CustomPlaygroundQuickLookable {
+    public func customPlaygroundQuickLook() -> PlaygroundQuickLook {
+        let type = CFNumberGetType(_cfObject)
+        switch type {
+        case kCFNumberCharType:
+            fallthrough
+        case kCFNumberSInt16Type:
+            fallthrough
+        case kCFNumberSInt32Type:
+            fallthrough
+        case kCFNumberSInt64Type:
+            fallthrough
+        case kCFNumberCharType:
+            fallthrough
+        case kCFNumberShortType:
+            fallthrough
+        case kCFNumberIntType:
+            fallthrough
+        case kCFNumberLongType:
+            fallthrough
+        case kCFNumberCFIndexType:
+            fallthrough
+        case kCFNumberNSIntegerType:
+            fallthrough
+        case kCFNumberLongLongType:
+            return .Int(self.longLongValue)
+        case kCFNumberFloat32Type:
+            fallthrough
+        case kCFNumberFloatType:
+            return .Float(self.floatValue)
+        case kCFNumberFloat64Type:
+            fallthrough
+        case kCFNumberDoubleType:
+            return .Double(self.doubleValue)
+        case kCFNumberCGFloatType:
+            if sizeof(CGFloat) == sizeof(Float32) {
+                return .Float(self.floatValue)
+            } else {
+                return .Double(self.doubleValue)
+            }
+        default:
+            return .Text("invalid NSNumber")
+        }
+    }
 }

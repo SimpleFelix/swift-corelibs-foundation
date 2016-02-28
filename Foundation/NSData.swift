@@ -71,7 +71,7 @@ private let __kCFDontDeallocate: CFOptionFlags = 0x10
 private let __kCFAllocatesCollectable: CFOptionFlags = 0x20
 
 public class NSData : NSObject, NSCopying, NSMutableCopying, NSSecureCoding {
-    typealias CFType = CFDataRef
+    typealias CFType = CFData
     private var _base = _CFInfo(typeID: CFDataGetTypeID())
     private var _length: CFIndex = 0
     private var _capacity: CFIndex = 0
@@ -80,12 +80,10 @@ public class NSData : NSObject, NSCopying, NSMutableCopying, NSSecureCoding {
     private var _bytes: UnsafeMutablePointer<UInt8> = nil
     
     internal var _cfObject: CFType {
-        get {
-            if self.dynamicType === NSData.self || self.dynamicType === NSMutableData.self {
-                return unsafeBitCast(self, CFType.self)
-            } else {
-                return CFDataCreate(kCFAllocatorSystemDefault, unsafeBitCast(self.bytes, UnsafePointer<UInt8>.self), self.length)
-            }
+        if self.dynamicType === NSData.self || self.dynamicType === NSMutableData.self {
+            return unsafeBitCast(self, CFType.self)
+        } else {
+            return CFDataCreate(kCFAllocatorSystemDefault, unsafeBitCast(self.bytes, UnsafePointer<UInt8>.self), self.length)
         }
     }
     
@@ -94,9 +92,7 @@ public class NSData : NSObject, NSCopying, NSMutableCopying, NSSecureCoding {
     }
     
     public override var hash: Int {
-        get {
-            return Int(bitPattern: CFHash(_cfObject))
-        }
+        return Int(bitPattern: CFHash(_cfObject))
     }
     
     public override func isEqual(object: AnyObject?) -> Bool {
@@ -120,7 +116,7 @@ public class NSData : NSObject, NSCopying, NSMutableCopying, NSSecureCoding {
         super.init()
         let options : CFOptionFlags = (self.dynamicType == NSMutableData.self) ? __kCFMutable | __kCFGrowable : 0x0
         if copy {
-            _CFDataInit(unsafeBitCast(self, CFMutableDataRef.self), options, length, UnsafeMutablePointer<UInt8>(bytes), length, false)
+            _CFDataInit(unsafeBitCast(self, CFMutableData.self), options, length, UnsafeMutablePointer<UInt8>(bytes), length, false)
             if let handler = deallocator {
                 handler(bytes, length)
             }
@@ -129,20 +125,16 @@ public class NSData : NSObject, NSCopying, NSMutableCopying, NSSecureCoding {
                 _deallocHandler!.handler = handler
             }
             // The data initialization should flag that CF should not deallocate which leaves the handler a chance to deallocate instead
-            _CFDataInit(unsafeBitCast(self, CFMutableDataRef.self), options | __kCFDontDeallocate, length, UnsafeMutablePointer<UInt8>(bytes), length, true)
+            _CFDataInit(unsafeBitCast(self, CFMutableData.self), options | __kCFDontDeallocate, length, UnsafeMutablePointer<UInt8>(bytes), length, true)
         }
     }
     
     public var length: Int {
-        get {
-            return CFDataGetLength(_cfObject)
-        }
+        return CFDataGetLength(_cfObject)
     }
 
     public var bytes: UnsafePointer<Void> {
-        get {
-            return UnsafePointer<Void>(CFDataGetBytePtr(_cfObject))
-        }
+        return UnsafePointer<Void>(CFDataGetBytePtr(_cfObject))
     }
     
     public override func copy() -> AnyObject {
@@ -162,11 +154,30 @@ public class NSData : NSObject, NSCopying, NSMutableCopying, NSSecureCoding {
     }
 
     public func encodeWithCoder(aCoder: NSCoder) {
-        
+        if let aKeyedCoder = aCoder as? NSKeyedArchiver {
+            aKeyedCoder._encodePropertyList(self, forKey: "NS.data")
+        } else {
+            aCoder.encodeBytes(UnsafePointer<UInt8>(self.bytes), length: self.length)
+        }
     }
     
     public required convenience init?(coder aDecoder: NSCoder) {
-        NSUnimplemented()
+        if !aDecoder.allowsKeyedCoding {
+            if let data = aDecoder.decodeDataObject() {
+                self.init(data: data)
+            } else {
+                return nil
+            }
+        } else if aDecoder.dynamicType == NSKeyedUnarchiver.self || aDecoder.containsValueForKey("NS.data") {
+            guard let data = aDecoder._decodePropertyListForKey("NS.data") as? NSData else {
+                return nil
+            }
+            self.init(data: data)
+        } else {
+            var len = 0
+            let bytes = aDecoder.decodeBytesForKey("NS.bytes", returnedLength: &len)
+            self.init(bytes: bytes, length: len)
+        }
     }
     
     public static func supportsSecureCoding() -> Bool {
@@ -505,6 +516,34 @@ extension NSData {
         try writeToFile(path, options: writeOptionsMask)
     }
     
+    public func rangeOfData(dataToFind: NSData, options mask: NSDataSearchOptions, range searchRange: NSRange) -> NSRange {
+        guard dataToFind.length > 0 else {return NSRange(location: NSNotFound, length: 0)}
+        guard let searchRange = searchRange.toRange() else {fatalError("invalid range")}
+        
+        precondition(searchRange.endIndex <= self.length, "range outside the bounds of data")
+        
+        let baseData = UnsafeBufferPointer<UInt8>(start: UnsafePointer<UInt8>(self.bytes), count: self.length)[searchRange]
+        let search = UnsafeBufferPointer<UInt8>(start: UnsafePointer<UInt8>(dataToFind.bytes), count: dataToFind.length)
+        
+        let location : Int?
+        let anchored = mask.contains(.Anchored)
+        if mask.contains(.Backwards) {
+            location = NSData.searchSubSequence(search.reverse(), inSequence: baseData.reverse(),anchored : anchored).map {$0.base-search.count}
+        } else {
+            location = NSData.searchSubSequence(search, inSequence: baseData,anchored : anchored)
+        }
+        return location.map {NSRange(location: $0, length: search.count)} ?? NSRange(location: NSNotFound, length: 0)
+    }
+    private static func searchSubSequence<T : CollectionType,T2 : SequenceType where T.Generator.Element : Equatable, T.Generator.Element == T2.Generator.Element, T.SubSequence.Generator.Element == T.Generator.Element>(subSequence : T2, inSequence seq: T,anchored : Bool) -> T.Index? {
+        for index in seq.indices {
+            if seq.suffixFrom(index).startsWith(subSequence) {
+                return index
+            }
+            if anchored {return nil}
+        }
+        return nil
+    }
+    
     internal func enumerateByteRangesUsingBlockRethrows(block: (UnsafePointer<Void>, NSRange, UnsafeMutablePointer<Bool>) throws -> Void) throws {
         var err : ErrorType? = nil
         self.enumerateByteRangesUsingBlock() { (buf, range, stop) -> Void in
@@ -529,13 +568,13 @@ extension NSData {
 
 extension NSData : _CFBridgable { }
 
-extension CFDataRef : _NSBridgable {
+extension CFData : _NSBridgable {
     typealias NSType = NSData
     internal var _nsObject: NSType { return unsafeBitCast(self, NSType.self) }
 }
 
 extension NSMutableData {
-    internal var _cfMutableObject: CFMutableDataRef { return unsafeBitCast(self, CFMutableDataRef.self) }
+    internal var _cfMutableObject: CFMutableData { return unsafeBitCast(self, CFMutableData.self) }
 }
 
 public class NSMutableData : NSData {
@@ -544,19 +583,12 @@ public class NSMutableData : NSData {
         self.init(bytes: nil, length: 0)
     }
     
-    public required convenience init?(coder aDecoder: NSCoder) {
-        NSUnimplemented()
-    }
-
-    
     internal override init(bytes: UnsafeMutablePointer<Void>, length: Int, copy: Bool, deallocator: ((UnsafeMutablePointer<Void>, Int) -> Void)?) {
         super.init(bytes: bytes, length: length, copy: copy, deallocator: deallocator)
     }
     
     public var mutableBytes: UnsafeMutablePointer<Void> {
-        get {
-            return UnsafeMutablePointer(CFDataGetMutableBytePtr(_cfMutableObject))
-        }
+        return UnsafeMutablePointer(CFDataGetMutableBytePtr(_cfMutableObject))
     }
     
     public override var length: Int {

@@ -41,31 +41,31 @@ internal class _NSCFString : NSMutableString {
     }
     
     override var length: Int {
-        return CFStringGetLength(unsafeBitCast(self, CFStringRef.self))
+        return CFStringGetLength(unsafeBitCast(self, CFString.self))
     }
     
     override func characterAtIndex(index: Int) -> unichar {
-        return CFStringGetCharacterAtIndex(unsafeBitCast(self, CFStringRef.self), index)
+        return CFStringGetCharacterAtIndex(unsafeBitCast(self, CFString.self), index)
     }
     
     override func replaceCharactersInRange(range: NSRange, withString aString: String) {
-        CFStringReplace(unsafeBitCast(self, CFMutableStringRef.self), CFRangeMake(range.location, range.length), aString._cfObject)
+        CFStringReplace(unsafeBitCast(self, CFMutableString.self), CFRangeMake(range.location, range.length), aString._cfObject)
+    }
+    
+    override var classForCoder: AnyClass {
+        return NSMutableString.self
     }
 }
 
 internal final class _NSCFConstantString : _NSCFString {
     internal var _ptr : UnsafePointer<UInt8> {
-        get {
-            let ptr = unsafeAddressOf(self) + sizeof(COpaquePointer) + sizeof(Int32) + sizeof(Int32) + sizeof(_CFInfo)
-            return UnsafePointer<UnsafePointer<UInt8>>(ptr).memory
-        }
+        let ptr = unsafeAddressOf(self) + sizeof(COpaquePointer) + sizeof(Int32) + sizeof(Int32) + sizeof(_CFInfo)
+        return UnsafePointer<UnsafePointer<UInt8>>(ptr).memory
     }
     internal var _length : UInt32 {
-        get {
-            let offset = sizeof(COpaquePointer) + sizeof(Int32) + sizeof(Int32) + sizeof(_CFInfo) + sizeof(UnsafePointer<UInt8>)
-            let ptr = unsafeAddressOf(self) + offset
-            return UnsafePointer<UInt32>(ptr).memory
-        }
+        let offset = sizeof(COpaquePointer) + sizeof(Int32) + sizeof(Int32) + sizeof(_CFInfo) + sizeof(UnsafePointer<UInt8>)
+        let ptr = unsafeAddressOf(self) + offset
+        return UnsafePointer<UInt32>(ptr).memory
     }
     
     required init(characters: UnsafePointer<unichar>, length: Int) {
@@ -106,6 +106,10 @@ internal final class _NSCFConstantString : _NSCFString {
     
     override func replaceCharactersInRange(range: NSRange, withString aString: String) {
         fatalError()
+    }
+    
+    override var classForCoder: AnyClass {
+        return NSString.self
     }
 }
 

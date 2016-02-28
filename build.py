@@ -15,14 +15,16 @@ foundation.GCC_PREFIX_HEADER = 'CoreFoundation/Base.subproj/CoreFoundation_Prefi
 
 if Configuration.current.target.sdk == OSType.Linux:
 	foundation.CFLAGS = '-DDEPLOYMENT_TARGET_LINUX -D_GNU_SOURCE '
-	foundation.LDFLAGS = '-Wl,@./CoreFoundation/linux.ld -Xlinker -T ${SDKROOT}/lib/swift/linux/${ARCH}/swift.ld -lswiftGlibc `icu-config --ldflags` -Wl,-defsym,__CFConstantStringClassReference=_TMC10Foundation19_NSCFConstantString -Wl,-Bsymbolic '
-
+	foundation.LDFLAGS = '${SWIFT_USE_LINKER} -Wl,@./CoreFoundation/linux.ld -lswiftGlibc `icu-config --ldflags` -Wl,-defsym,__CFConstantStringClassReference=_TMC10Foundation19_NSCFConstantString -Wl,-Bsymbolic '
 elif Configuration.current.target.sdk == OSType.FreeBSD:
 	foundation.CFLAGS = '-DDEPLOYMENT_TARGET_FREEBSD -I/usr/local/include -I/usr/local/include/libxml2 '
 	foundation.LDFLAGS = ''
 elif Configuration.current.target.sdk == OSType.MacOSX:
 	foundation.CFLAGS = '-DDEPLOYMENT_TARGET_MACOSX '
 	foundation.LDFLAGS = '-licucore -twolevel_namespace -Wl,-alias_list,CoreFoundation/Base.subproj/DarwinSymbolAliases -sectcreate __UNICODE __csbitmaps CoreFoundation/CharacterSets/CFCharacterSetBitmaps.bitmap -sectcreate __UNICODE __properties CoreFoundation/CharacterSets/CFUniCharPropertyDatabase.data -sectcreate __UNICODE __data CoreFoundation/CharacterSets/CFUnicodeData-L.mapping -segprot __UNICODE r r '
+
+if Configuration.current.build_mode == Configuration.Debug:
+        foundation.LDFLAGS += ' -lswiftSwiftOnoneSupport '
 
 # For now, we do not distinguish between public and private headers (they are all private to Foundation)
 # These are really part of CF, which should ultimately be a separate target
@@ -61,6 +63,15 @@ if "XCTEST_BUILD_DIR" in Configuration.current.variables:
 		'-L${XCTEST_BUILD_DIR}',
 		'-I/usr/include/libxml2'
 	]
+
+if "LIBDISPATCH_SOURCE_DIR" in Configuration.current.variables:
+        foundation.CFLAGS += " "+" ".join([
+                '-DDEPLOYMENT_ENABLE_LIBDISPATCH',
+                '-I'+Configuration.current.variables["LIBDISPATCH_SOURCE_DIR"],
+                '-I'+Configuration.current.variables["LIBDISPATCH_BUILD_DIR"]+'/tests'  # for include of dispatch/private.h in CF
+        ])
+
+
 foundation.SWIFTCFLAGS = " ".join(swift_cflags)
 
 foundation.LDFLAGS += '-lpthread -ldl -lm -lswiftCore -lxml2 '
@@ -265,6 +276,7 @@ swift_sources = CompileSwiftSources([
 	'Foundation/NSCoder.swift',
 	'Foundation/NSComparisonPredicate.swift',
 	'Foundation/NSCompoundPredicate.swift',
+	'Foundation/NSConcreteValue.swift',
 	'Foundation/NSData.swift',
 	'Foundation/NSDate.swift',
 	'Foundation/NSDateComponentsFormatter.swift',
@@ -287,10 +299,13 @@ swift_sources = CompileSwiftSources([
 	'Foundation/NSIndexPath.swift',
 	'Foundation/NSIndexSet.swift',
 	'Foundation/NSJSONSerialization.swift',
+	'Foundation/NSKeyedCoderOldStyleArray.swift',
 	'Foundation/NSKeyedArchiver.swift',
+	'Foundation/NSKeyedUnarchiver.swift',
 	'Foundation/NSLengthFormatter.swift',
 	'Foundation/NSLocale.swift',
 	'Foundation/NSLock.swift',
+	'Foundation/NSLog.swift',
 	'Foundation/NSMassFormatter.swift',
 	'Foundation/NSNotification.swift',
 	'Foundation/NSNotificationQueue.swift',
@@ -315,6 +330,7 @@ swift_sources = CompileSwiftSources([
 	'Foundation/NSScanner.swift',
 	'Foundation/NSSet.swift',
 	'Foundation/NSSortDescriptor.swift',
+	'Foundation/NSSpecialValue.swift',
 	'Foundation/NSStream.swift',
 	'Foundation/NSString.swift',
 	'Foundation/String.swift',
@@ -357,6 +373,18 @@ foundation_tests_resources = CopyResources('TestFoundation', [
     'TestFoundation/Resources/Test.plist',
     'TestFoundation/Resources/NSStringTestData.txt',
     'TestFoundation/Resources/NSXMLDocumentTestData.xml',
+    'TestFoundation/Resources/PropertyList-1.0.dtd',
+    'TestFoundation/Resources/NSXMLDTDTestData.xml',
+    'TestFoundation/Resources/NSKeyedUnarchiver-ArrayTest.plist',
+    'TestFoundation/Resources/NSKeyedUnarchiver-ComplexTest.plist',
+    'TestFoundation/Resources/NSKeyedUnarchiver-ConcreteValueTest.plist',
+    'TestFoundation/Resources/NSKeyedUnarchiver-EdgeInsetsTest.plist',
+    'TestFoundation/Resources/NSKeyedUnarchiver-NotificationTest.plist',
+    'TestFoundation/Resources/NSKeyedUnarchiver-RangeTest.plist',
+    'TestFoundation/Resources/NSKeyedUnarchiver-RectTest.plist',
+    'TestFoundation/Resources/NSKeyedUnarchiver-URLTest.plist',
+    'TestFoundation/Resources/NSKeyedUnarchiver-UUIDTest.plist',
+    'TestFoundation/Resources/NSKeyedUnarchiver-OrderedSetTest.plist',
 ])
 
 # TODO: Probably this should be another 'product', but for now it's simply a phase

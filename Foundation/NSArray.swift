@@ -39,12 +39,10 @@ public class NSArray : NSObject, NSCopying, NSMutableCopying, NSSecureCoding, NS
     internal var _storage = [AnyObject]()
     
     public var count: Int {
-        get {
-            if self.dynamicType === NSArray.self || self.dynamicType === NSMutableArray.self {
-                return _storage.count
-            } else {
-                NSRequiresConcreteImplementation()
-            }
+        if self.dynamicType === NSArray.self || self.dynamicType === NSMutableArray.self {
+            return _storage.count
+        } else {
+            NSRequiresConcreteImplementation()
         }
     }
     
@@ -68,11 +66,45 @@ public class NSArray : NSObject, NSCopying, NSMutableCopying, NSSecureCoding, NS
     }
     
     public required convenience init?(coder aDecoder: NSCoder) {
-        self.init(objects: nil, count: 0)
+        if !aDecoder.allowsKeyedCoding {
+            var cnt: UInt32 = 0
+            // We're stuck with (int) here (rather than unsigned int)
+            // because that's the way the code was originally written, unless
+            // we go to a new version of the class, which has its own problems.
+            withUnsafeMutablePointer(&cnt) { (ptr: UnsafeMutablePointer<UInt32>) -> Void in
+                aDecoder.decodeValueOfObjCType("i", at: UnsafeMutablePointer<Void>(ptr))
+            }
+            let objects = UnsafeMutablePointer<AnyObject?>.alloc(Int(cnt))
+            for idx in 0..<cnt {
+                objects.advancedBy(Int(idx)).initialize(aDecoder.decodeObject())
+            }
+            self.init(objects: UnsafePointer<AnyObject?>(objects), count: Int(cnt))
+            objects.destroy(Int(cnt))
+            objects.dealloc(Int(cnt))
+        } else if aDecoder.dynamicType == NSKeyedUnarchiver.self || aDecoder.containsValueForKey("NS.objects") {
+            let objects = aDecoder._decodeArrayOfObjectsForKey("NS.objects")
+            self.init(array: objects)
+        } else {
+            var objects = [AnyObject]()
+            var count = 0
+            while let object = aDecoder.decodeObjectForKey("NS.object.\(count)") {
+                objects.append(object)
+                count += 1
+            }
+            self.init(array: objects)
+        }
     }
     
     public func encodeWithCoder(aCoder: NSCoder) {
-        
+        if let keyedArchiver = aCoder as? NSKeyedArchiver {
+            keyedArchiver._encodeArrayOfObjects(self, forKey:"NS.objects")
+        } else {
+            for object in self {
+                if let codable = object as? NSCoding {
+                    codable.encodeWithCoder(aCoder)
+                }
+            }
+        }
     }
     
     public static func supportsSecureCoding() -> Bool {
@@ -148,13 +180,11 @@ public class NSArray : NSObject, NSCopying, NSMutableCopying, NSSecureCoding, NS
     }
 
     internal var allObjects: [AnyObject] {
-        get {
-            if self.dynamicType === NSArray.self || self.dynamicType === NSMutableArray.self {
-                return _storage
-            } else {
-                return (0..<count).map { idx in
-                    return self[idx]
-                }
+        if self.dynamicType === NSArray.self || self.dynamicType === NSMutableArray.self {
+            return _storage
+        } else {
+            return (0..<count).map { idx in
+                return self[idx]
             }
         }
     }
@@ -274,22 +304,18 @@ public class NSArray : NSObject, NSCopying, NSMutableCopying, NSSecureCoding, NS
     }
 
     public var firstObject: AnyObject? {
-        get {
-            if count > 0 {
-                return objectAtIndex(0)
-            } else {
-                return nil
-            }
+        if count > 0 {
+            return objectAtIndex(0)
+        } else {
+            return nil
         }
     }
     
     public var lastObject: AnyObject? {
-        get {
-            if count > 0 {
-                return objectAtIndex(count - 1)
-            } else {
-                return nil
-            }
+        if count > 0 {
+            return objectAtIndex(count - 1)
+        } else {
+            return nil
         }
     }
     
@@ -324,15 +350,13 @@ public class NSArray : NSObject, NSCopying, NSMutableCopying, NSSecureCoding, NS
     }
     
     /*@NSCopying*/ public var sortedArrayHint: NSData {
-        get {
-            let buffer = UnsafeMutablePointer<Int32>.alloc(count)
-            for idx in 0..<count {
-                let item = objectAtIndex(idx) as! NSObject
-                let hash = item.hash
-                buffer.advancedBy(idx).memory = Int32(hash).littleEndian
-            }
-            return NSData(bytesNoCopy: unsafeBitCast(buffer, UnsafeMutablePointer<Void>.self), length: count * sizeof(Int), freeWhenDone: true)
+        let buffer = UnsafeMutablePointer<Int32>.alloc(count)
+        for idx in 0..<count {
+            let item = objectAtIndex(idx) as! NSObject
+            let hash = item.hash
+            buffer.advancedBy(idx).memory = Int32(hash).littleEndian
         }
+        return NSData(bytesNoCopy: unsafeBitCast(buffer, UnsafeMutablePointer<Void>.self), length: count * sizeof(Int), freeWhenDone: true)
     }
     
     public func sortedArrayUsingFunction(comparator: @convention(c) (AnyObject, AnyObject, UnsafeMutablePointer<Void>) -> Int, context: UnsafeMutablePointer<Void>) -> [AnyObject] {
@@ -368,13 +392,11 @@ public class NSArray : NSObject, NSCopying, NSMutableCopying, NSSecureCoding, NS
     }
     
     public subscript (idx: Int) -> AnyObject {
-        get {
-            guard idx < count && idx >= 0 else {
-                fatalError("\(self): Index out of bounds")
-            }
-            
-            return objectAtIndex(idx)
+        guard idx < count && idx >= 0 else {
+            fatalError("\(self): Index out of bounds")
         }
+        
+        return objectAtIndex(idx)
     }
     
     public func enumerateObjectsUsingBlock(block: (AnyObject, Int, UnsafeMutablePointer<ObjCBool>) -> Void) {
@@ -543,7 +565,7 @@ public class NSArray : NSObject, NSCopying, NSMutableCopying, NSSecureCoding, NS
 }
 
 extension NSArray : _CFBridgable, _SwiftBridgable {
-    internal var _cfObject: CFArrayRef { return unsafeBitCast(self, CFArrayRef.self) }
+    internal var _cfObject: CFArray { return unsafeBitCast(self, CFArray.self) }
     internal var _swiftObject: [AnyObject] {
         var array: [AnyObject]?
         Array._forceBridgeFromObject(self, result: &array)
@@ -552,15 +574,15 @@ extension NSArray : _CFBridgable, _SwiftBridgable {
 }
 
 extension NSMutableArray {
-    internal var _cfMutableObject: CFMutableArrayRef { return unsafeBitCast(self, CFMutableArrayRef.self) }
+    internal var _cfMutableObject: CFMutableArray { return unsafeBitCast(self, CFMutableArray.self) }
 }
 
-extension CFArrayRef : _NSBridgable, _SwiftBridgable {
+extension CFArray : _NSBridgable, _SwiftBridgable {
     internal var _nsObject: NSArray { return unsafeBitCast(self, NSArray.self) }
     internal var _swiftObject: Array<AnyObject> { return _nsObject._swiftObject }
 }
 
-extension CFArrayRef {
+extension CFArray {
     /// Bridge something returned from CF to an Array<T>. Useful when we already know that a CFArray contains objects that are toll-free bridged with Swift objects, e.g. CFArray<CFURLRef>.
     /// - Note: This bridging operation is unfortunately still O(n), but it only traverses the NSArray once, creating the Swift array and casting at the same time.
     func _unsafeTypedBridge<T : AnyObject>() -> Array<T> {
@@ -576,7 +598,7 @@ extension CFArrayRef {
 
 extension Array : _NSBridgable, _CFBridgable {
     internal var _nsObject: NSArray { return _bridgeToObject() }
-    internal var _cfObject: CFArrayRef { return _nsObject._cfObject }
+    internal var _cfObject: CFArray { return _nsObject._cfObject }
 }
 
 public struct NSBinarySearchingOptions : OptionSetType {
@@ -641,10 +663,6 @@ public class NSMutableArray : NSArray {
         for idx in 0..<cnt {
             _storage.append(objects[idx]!)
         }
-    }
-    
-    public required convenience init(coder: NSCoder) {
-        self.init()
     }
     
     public override subscript (idx: Int) -> AnyObject {

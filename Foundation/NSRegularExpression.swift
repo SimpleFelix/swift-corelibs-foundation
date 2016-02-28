@@ -26,7 +26,7 @@ public struct NSRegularExpressionOptions : OptionSetType {
 }
 
 public class NSRegularExpression : NSObject, NSCopying, NSCoding {
-    internal var _internal: _CFRegularExpressionRef
+    internal var _internal: _CFRegularExpression
     
     public override func copy() -> AnyObject {
         return copyWithZone(nil)
@@ -48,7 +48,7 @@ public class NSRegularExpression : NSObject, NSCopying, NSCoding {
     */
     
     public init(pattern: String, options: NSRegularExpressionOptions) throws {
-        var error: Unmanaged<CFErrorRef>?
+        var error: Unmanaged<CFError>?
 #if os(OSX) || os(iOS)
         let opt =  _CFRegularExpressionOptions(rawValue: options.rawValue)
 #else

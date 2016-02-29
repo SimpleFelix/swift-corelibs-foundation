@@ -24,7 +24,7 @@ elif Configuration.current.target.sdk == OSType.MacOSX:
 	foundation.LDFLAGS = '-licucore -twolevel_namespace -Wl,-alias_list,CoreFoundation/Base.subproj/DarwinSymbolAliases -sectcreate __UNICODE __csbitmaps CoreFoundation/CharacterSets/CFCharacterSetBitmaps.bitmap -sectcreate __UNICODE __properties CoreFoundation/CharacterSets/CFUniCharPropertyDatabase.data -sectcreate __UNICODE __data CoreFoundation/CharacterSets/CFUnicodeData-L.mapping -segprot __UNICODE r r '
 
 if Configuration.current.build_mode == Configuration.Debug:
-	foundation.LDFLAGS += '-lswiftSwiftOnoneSupport'
+        foundation.LDFLAGS += ' -lswiftSwiftOnoneSupport '
 
 # For now, we do not distinguish between public and private headers (they are all private to Foundation)
 # These are really part of CF, which should ultimately be a separate target
@@ -63,6 +63,15 @@ if "XCTEST_BUILD_DIR" in Configuration.current.variables:
 		'-L${XCTEST_BUILD_DIR}',
 		'-I/usr/include/libxml2'
 	]
+
+if "LIBDISPATCH_SOURCE_DIR" in Configuration.current.variables:
+        foundation.CFLAGS += " "+" ".join([
+                '-DDEPLOYMENT_ENABLE_LIBDISPATCH',
+                '-I'+Configuration.current.variables["LIBDISPATCH_SOURCE_DIR"],
+                '-I'+Configuration.current.variables["LIBDISPATCH_BUILD_DIR"]+'/tests'  # for include of dispatch/private.h in CF
+        ])
+
+
 foundation.SWIFTCFLAGS = " ".join(swift_cflags)
 
 foundation.LDFLAGS += '-lpthread -ldl -lm -lswiftCore -lxml2 '
